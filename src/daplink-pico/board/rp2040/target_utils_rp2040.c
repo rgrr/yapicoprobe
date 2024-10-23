@@ -25,10 +25,10 @@
 
 #include <stdio.h>
 
-#include "pico_target_utils.h"
+#include "target_utils_rp2040.h"
 
 #include "swd_host.h"
-#include "target_rpXXXX.h"
+#include "target_utils_raspberry.h"
 
 
 

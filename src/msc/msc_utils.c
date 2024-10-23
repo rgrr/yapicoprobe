@@ -29,7 +29,6 @@
 #include <stdio.h>
 
 #include <pico/stdlib.h>
-#include <target_rpXXXX.h>
 
 #include "boot/uf2.h"                // this is the Pico variant of the UF2 header
 
@@ -49,7 +48,8 @@
 #include "error.h"
 #include "flash_intf.h"
 #include "flash_manager.h"
-#include "pico_target_utils.h"
+#include "target_utils_rp2040.h"
+#include "target_utils_raspberry.h"
 
 
 #define DEBUG_MODULE    0

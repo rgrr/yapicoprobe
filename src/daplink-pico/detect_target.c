@@ -43,8 +43,8 @@
 
 #include "target_family.h"
 #include "target_board.h"
-#include "target_rpXXXX.h"
-#include "program_flash_generic.h"
+#include "target_utils_raspberry.h"
+#include "program_flash_generic_rp2040.h"
 
 #include "probe.h"
 #include "minIni/minIni.h"
@@ -243,7 +243,6 @@ void pico_prerun_board_config(void)
             uint32_t chip_id;
 
             r = swd_read_word(0x40000000, &chip_id);
-            printf("!!!!!!!!!!!!!!!!!! chip_id: 0x%lx\n", chip_id);
             if (r  &&  (chip_id & 0x0fffffff) == swd_id_rp2350) {
                 target_found = true;
                 strcpy(board_vendor, "RaspberryPi");

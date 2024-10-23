@@ -16,7 +16,7 @@
 
 #include "swd_host.h"
 
-#include "pico_target_utils.h"
+#include "target_utils_rp2040.h"
 
 extern char __start_for_target_connect[];
 extern char __stop_for_target_connect[];
