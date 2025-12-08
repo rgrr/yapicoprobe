@@ -105,6 +105,21 @@ static TimerHandle_t            timer_rtt_cb_verify;
 #endif
 
 
+#define SWD_RETRY_MS        2
+#define SWD_MAX_RETRIES     10
+
+#define SWD_OPERATION_WITH_RETRY(result, operation) \
+    do { \
+        int _retries = SWD_MAX_RETRIES; \
+        result = false; \
+        do { \
+            result = (operation); \
+            if (!result && _retries > 1) { \
+                vTaskDelay(pdMS_TO_TICKS(SWD_RETRY_MS)); \
+            } \
+            _retries--; \
+        } while (!result && _retries > 0); \
+    } while (0)
 
 static void rtt_cb_verify_timeout(TimerHandle_t xTimer)
 {
@@ -286,26 +301,88 @@ static void rtt_from_target_thread(void *p)
             continue;
         }
 
-        ft_ok = swd_read_word(ft_extRttBuf->addr + offsetof(SEGGER_RTT_BUFFER_UP, WrOff), (uint32_t *)&(ft_extRttBuf->aUp.WrOff));
+        bool read_word_ok = false;
+        SWD_OPERATION_WITH_RETRY(read_word_ok,
+            swd_read_word(ft_extRttBuf->addr + offsetof(SEGGER_RTT_BUFFER_UP, WrOff), (uint32_t *)&(ft_extRttBuf->aUp.WrOff)));
+
+        if (!read_word_ok) {
+            picoprobe_error("swd_read_word\n");
+            ft_ok = false;
+            ft_cnt = 0;
+            // Don't trigger full reconnect, just skip this poll
+            xEventGroupSetBits(events, EV_RTT_FROM_TARGET_END);
+            continue;
+        }
+
+        ft_ok = read_word_ok;
 
         if (ft_ok  &&  ft_extRttBuf->aUp.WrOff != ft_extRttBuf->aUp.RdOff) {
             //
             // fetch data from target
             //
+            unsigned int bytes_available;
+            unsigned int bytes_to_read;
+            unsigned int first_chunk_size;
+
             if (ft_extRttBuf->aUp.WrOff > ft_extRttBuf->aUp.RdOff) {
-                ft_cnt = MIN(ft_cnt, ft_extRttBuf->aUp.WrOff - ft_extRttBuf->aUp.RdOff);
+                bytes_available = ft_extRttBuf->aUp.WrOff - ft_extRttBuf->aUp.RdOff;
             }
             else {
-                ft_cnt = MIN(ft_cnt, ft_extRttBuf->aUp.SizeOfBuffer - ft_extRttBuf->aUp.RdOff);
+                // Wraparound
+                bytes_available = (ft_extRttBuf->aUp.SizeOfBuffer - ft_extRttBuf->aUp.RdOff)
+                    + ft_extRttBuf->aUp.WrOff;
             }
-            ft_cnt = MIN(ft_cnt, sizeof(ft_buf));
+            // Limit by input constraint (ft_cnt), buffer size, and available data
+            bytes_to_read = MIN(ft_cnt, bytes_available);
+            bytes_to_read = MIN(bytes_to_read, sizeof(ft_buf));
+
+            // Determine first chunk size
+            if (ft_extRttBuf->aUp.WrOff > ft_extRttBuf->aUp.RdOff) {
+                // No wraparound - read everything in one chunk
+                first_chunk_size = bytes_to_read;
+            }
+            else {
+                // Wraparound - first chunk goes to end of buffer
+                first_chunk_size = ft_extRttBuf->aUp.SizeOfBuffer - ft_extRttBuf->aUp.RdOff;
+                first_chunk_size = MIN(first_chunk_size, bytes_to_read);
+            }
 
             memset(ft_buf, 0, sizeof(ft_buf));
-            ft_ok = ft_ok  &&  swd_read_memory((uint32_t)ft_extRttBuf->aUp.pBuffer + ft_extRttBuf->aUp.RdOff, ft_buf, ft_cnt);
-            ft_extRttBuf->aUp.RdOff = (ft_extRttBuf->aUp.RdOff + ft_cnt) % ft_extRttBuf->aUp.SizeOfBuffer;
-            ft_ok = ft_ok  &&  swd_write_word(ft_extRttBuf->addr + offsetof(SEGGER_RTT_BUFFER_UP, RdOff), ft_extRttBuf->aUp.RdOff);
 
-            rtt_cb_alive = true;
+            // Read first chunk
+            bool read_ok;
+            SWD_OPERATION_WITH_RETRY(read_ok,
+                swd_read_memory((uint32_t)ft_extRttBuf->aUp.pBuffer + ft_extRttBuf->aUp.RdOff,
+                    ft_buf, first_chunk_size));
+
+            // Read second chunk if wraparound
+            if (read_ok && (bytes_to_read > first_chunk_size)) {
+                unsigned int second_chunk_size = bytes_to_read - first_chunk_size;
+                SWD_OPERATION_WITH_RETRY(read_ok,
+                    swd_read_memory((uint32_t)ft_extRttBuf->aUp.pBuffer,
+                        ft_buf + first_chunk_size,
+                        second_chunk_size));
+            }
+
+            if (!read_ok) {
+                picoprobe_error("swd_read_memory\n");
+                ft_ok = false;
+                ft_cnt = 0;
+            }
+            else {
+                ft_cnt = bytes_to_read;
+                ft_extRttBuf->aUp.RdOff = (ft_extRttBuf->aUp.RdOff + bytes_to_read) % ft_extRttBuf->aUp.SizeOfBuffer;
+
+                bool write_ok;
+                SWD_OPERATION_WITH_RETRY(write_ok,
+                    swd_write_word(ft_extRttBuf->addr + offsetof(SEGGER_RTT_BUFFER_UP, RdOff), ft_extRttBuf->aUp.RdOff));
+                if (!write_ok) {
+                    picoprobe_error("swd_write_word\n");
+                    ft_ok = false;
+                }
+
+                rtt_cb_alive = true;
+            }
         }
         else {
             ft_cnt = 0;
