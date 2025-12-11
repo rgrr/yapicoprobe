@@ -194,24 +194,26 @@ void dap_task(void *ptr)
 
     for (;;) {
         EventBits_t ev = xEventGroupWaitBits(dap_events, 0x01, pdTRUE, pdFALSE,
-                                             swd_connected ? pdMS_TO_TICKS(20) : pdMS_TO_TICKS(100));
+                                             swd_connected ? pdMS_TO_TICKS(20) : pdMS_TO_TICKS(1000));
 //        picoprobe_info("vvvv %d\n", xx);
 
         size_t n = xStreamBufferBytesAvailable(dap_stream);
         n = MIN(n, sizeof(RxDataBuffer) - rx_len);
         xStreamBufferReceive(dap_stream, RxDataBuffer + rx_len, n, 0);
         rx_len += n;
+        // post: data fetched from stream
 
         if (rx_len == 0  &&  ev == 0) {
             if (swd_connected) {
+                //
+                // receive RTT data while debugging if there is no DAP command pending
+                //
                 sw_unlock(E_SWLOCK_DAPV2);
 
-//                picoprobe_error("!!!!!!!!! unlock\n");
                 do {
                     ev = xEventGroupWaitBits(dap_events, 0x01, pdTRUE, pdFALSE, pdMS_TO_TICKS(100));
                     n = xStreamBufferBytesAvailable(dap_stream);
                 } while (n == 0  &&  ev == 0);
-//                picoprobe_error("!!!!!!!!! lock again\n");
 
                 sw_lock(E_SWLOCK_DAPV2);
             }

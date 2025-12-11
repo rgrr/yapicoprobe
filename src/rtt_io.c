@@ -601,22 +601,15 @@ void rtt_io_thread(void *ptr)
         // post: we have the interface
 
         if (dap_connected()) {
-//            picoprobe_info("HELLOOOOOOOOOOOOOOOOO\n");
-
-#if 1
+            //
+            // do RTT while debugging until a DAP command arrives
+            //
             do {
                 if ( !is_target_ok(0)) {
                     break;
                 }
                 do_rtt_io(rtt_cb, false);
-//                vTaskDelay(pdMS_TO_TICKS(10));
             } while ( !sw_unlock_requested());
-#else
-            while ( !sw_unlock_requested()) { //  &&  is_target_ok(0)) {
-                vTaskDelay(pdMS_TO_TICKS(100));
-            }
-#endif
-
             sw_unlock(E_SWLOCK_RTT);
             continue;
         }
