@@ -99,7 +99,7 @@ static TaskHandle_t             task_rtt_console = NULL;
 static TaskHandle_t             task_rtt_from_target_thread = NULL;
 static StreamBufferHandle_t     stream_rtt_console_to_target;                  // small stream for host->probe->target console communication
 static EventGroupHandle_t       events;
-static TimerHandle_t            timer_dap_connected;
+static TimerHandle_t            timer_dap_connected;                           // minimum time do_rtt_io() should be active if DAP connected
 
 #if INCLUDE_SYSVIEW
     #define RTT_CHANNEL_SYSVIEW 1
@@ -227,11 +227,9 @@ static bool rtt_check_channel_from_target(uint32_t rtt_cb, uint16_t channel, EXT
         *found = *found  &&  swd_read_memory(extRttBuf->addr, (uint8_t *)&(extRttBuf->aUp), sizeof(extRttBuf->aUp));
         *found = *found  &&  (extRttBuf->aUp.SizeOfBuffer > 0  &&  extRttBuf->aUp.SizeOfBuffer < TARGET_RAM_END - TARGET_RAM_START);
         *found = *found  &&  ((uint32_t)extRttBuf->aUp.pBuffer >= TARGET_RAM_START  &&  (uint32_t)extRttBuf->aUp.pBuffer + extRttBuf->aUp.SizeOfBuffer <= TARGET_RAM_END);
-#if 0
         if (*found) {
-            picoprobe_info("     rtt_check_channel_from_target: %u %p %5u %5u %5u\n", channel, extRttBuf->aUp.pBuffer, extRttBuf->aUp.SizeOfBuffer, extRttBuf->aUp.RdOff, extRttBuf->aUp.WrOff);
+            picoprobe_debug("     rtt_check_channel_from_target: %u %p %5u %5u %5u\n", channel, extRttBuf->aUp.pBuffer, extRttBuf->aUp.SizeOfBuffer, extRttBuf->aUp.RdOff, extRttBuf->aUp.WrOff);
         }
-#endif
     }
     return ok;
 }   // rtt_check_channel_from_target
@@ -259,11 +257,9 @@ static bool rtt_check_channel_to_target(uint32_t rtt_cb, uint16_t channel, EXT_S
         *found = *found  &&  swd_read_memory(extRttBuf->addr, (uint8_t *)&(extRttBuf->aDown), sizeof(extRttBuf->aDown));
         *found = *found  &&  (extRttBuf->aDown.SizeOfBuffer > 0  &&  extRttBuf->aDown.SizeOfBuffer < TARGET_RAM_END - TARGET_RAM_START);
         *found = *found  &&  ((uint32_t)extRttBuf->aDown.pBuffer >= TARGET_RAM_START  &&  (uint32_t)extRttBuf->aDown.pBuffer + extRttBuf->aDown.SizeOfBuffer <= TARGET_RAM_END);
-#if 0
         if (*found) {
-            picoprobe_info("     rtt_check_channel_to_target  : %u %p %5u %5u %5u\n", channel, extRttBuf->aDown.pBuffer, extRttBuf->aDown.SizeOfBuffer, extRttBuf->aDown.RdOff, extRttBuf->aDown.WrOff);
+            picoprobe_debug("     rtt_check_channel_to_target  : %u %p %5u %5u %5u\n", channel, extRttBuf->aDown.pBuffer, extRttBuf->aDown.SizeOfBuffer, extRttBuf->aDown.RdOff, extRttBuf->aDown.WrOff);
         }
-#endif
     }
     return ok;
 }   // rtt_check_channel_to_target
