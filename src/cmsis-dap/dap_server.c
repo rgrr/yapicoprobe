@@ -242,6 +242,7 @@ void dap_task(void *ptr)
             }
 
             if (rx_len != request_len) {
+                // actually this means that there are more bytes received than expected (handle as multi commands?)
                 picoprobe_error("!!!!!!!!! %d != %d\n", (int)request_len, (int)rx_len);
             }
 
