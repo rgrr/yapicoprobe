@@ -465,6 +465,9 @@ static bool rtt_to_target(EXT_SEGGER_RTT_BUFFER_DOWN *extRttBuf, StreamBufferHan
 
 
 static void do_rtt_io(uint32_t rtt_cb, bool with_alive_check)
+/**
+ * Do RTT IO until either the RTT_CB is lost or if there is another SWD request.
+ */
 {
 #if OPT_TARGET_UART
     EXT_SEGGER_RTT_BUFFER_UP   aUpConsole;       // Up buffer, transferring information up from target via debug probe to host
@@ -689,6 +692,7 @@ void rtt_io_thread(void *ptr)
         sw_lock(E_SWLOCK_RTT);
         // post: we have the interface
 
+#if OPT_RTT_WHILE_DEBUGGING  // EXPERIMENTAL FEATURE
         if (dap_is_connected()) {
             //
             // Do RTT while debugging until a DAP command arrives
@@ -703,6 +707,14 @@ void rtt_io_thread(void *ptr)
             sw_unlock(E_SWLOCK_RTT);
             continue;
         }
+#else
+        if (dap_is_connected()) {
+            picoprobe_error("RTT WHILE DEBUGGING SEEMS TO BE DISABLED.  WE SHOULD NEVER ARRIVEE HERE.\n");
+            vTaskDelay(pdMS_TO_TICKS(100));
+            sw_unlock(E_SWLOCK_RTT);
+            continue;
+        }
+#endif
 
         if ( !target_online) {
             if (g_board_info.prerun_board_config != NULL) {

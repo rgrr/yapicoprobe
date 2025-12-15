@@ -40,6 +40,7 @@ option(OPT_NET_IPERF_SERVER    "Enable iperf server for tuning"         1)
 option(OPT_NET_SYSVIEW_SERVER  "Enable SysView over TCPIP"              1)
 option(OPT_CDC_SYSVIEW         "Enable SysView over CDC"                0)
 option(OPT_SERIAL_CRLF         "Insert carriage returns after debug print statements" 0)
+option(OPT_RTT_WHILE_DEBUGGING "EXPERIMENTAL: do RTT while debugging, works for PyOCD" 1)
 
 # can be reconfigured
 set(OPT_MCU_FORCE_CLOCK_MHZ    "" CACHE STRING "Set processor frequency. Should be a multiple of 24MHz, disable with empty string (-> use PROBE_CPU_CLOCK_MHZ)")
@@ -407,6 +408,15 @@ endif()
 #
 if (OPT_SERIAL_CRLF)
     add_compile_definitions(OPT_SERIAL_CRLF=1)
+endif()
+
+#--------------------------------------------------------------------------------------------------
+#
+# Enable RTT while debugging.  Works fine (hopefully) with PyOCD.
+# With OpenOCD it is not working reliably. 
+#
+if (OPT_RTT_WHILE_DEBUGGING)
+    add_compile_definitions(OPT_RTT_WHILE_DEBUGGING=1)
 endif()
 
 #--------------------------------------------------------------------------------------------------

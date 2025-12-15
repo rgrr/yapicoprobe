@@ -210,7 +210,7 @@ void dap_task(void *ptr)
         rx_len += n;
         // post: data fetched from stream
 
-#if 1  // EXPERIMENTAL FEATURE
+#if OPT_RTT_WHILE_DEBUGGING  // EXPERIMENTAL FEATURE
         if (rx_len == 0  &&  ev == 0) {
             if (swd_connected) {
                 //
