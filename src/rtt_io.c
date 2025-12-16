@@ -99,7 +99,7 @@ static TaskHandle_t             task_rtt_console = NULL;
 static TaskHandle_t             task_rtt_from_target_thread = NULL;
 static StreamBufferHandle_t     stream_rtt_console_to_target;                  // small stream for host->probe->target console communication
 static EventGroupHandle_t       events;
-static TimerHandle_t            timer_dap_connected;                           // minimum time do_rtt_io() should be active if DAP connected
+static TimerHandle_t            timer_rtt_dap_interleave;                      // minimum time do_rtt_io() should be active if DAP connected
 
 #if INCLUDE_SYSVIEW
     #define RTT_CHANNEL_SYSVIEW 1
@@ -576,10 +576,10 @@ static void do_rtt_io(uint32_t rtt_cb)
         if (dap_is_connected()) {
             if (dap_connected_first_round) {
                 dap_connected_first_round = false;
-                xTimerReset(timer_dap_connected, 100);
+                xTimerReset(timer_rtt_dap_interleave, 100);
             }
-            else if (sw_unlock_requested()  &&  !xTimerIsTimerActive(timer_dap_connected)) {
-//                picoprobe_info("xx DAP timeout %d %d\n", sw_unlock_requested(), !xTimerIsTimerActive(timer_dap_connected));
+            else if (sw_unlock_requested()  &&  !xTimerIsTimerActive(timer_rtt_dap_interleave)) {
+//                picoprobe_info("xx DAP timeout %d %d\n", sw_unlock_requested(), !xTimerIsTimerActive(timer_rtt_dap_interleave));
                 ok = false;
             }
         }
@@ -592,7 +592,7 @@ static void do_rtt_io(uint32_t rtt_cb)
     }
 //    printf("ee\n");
     rtt_console_running = false;
-    xTimerStop(timer_dap_connected, 100);
+    xTimerStop(timer_rtt_dap_interleave, 100);
 }   // do_rtt_io
 
 
@@ -846,7 +846,8 @@ void rtt_console_init(uint32_t task_prio)
     }
 #endif
 
-    timer_dap_connected = xTimerCreate("RTT DAP connected timeout", pdMS_TO_TICKS(5), pdFALSE, NULL, rtt_cb_verify_timeout);
+    // TODO rtt_io needs 20ms to pull console while DAP is active (this is actually too long and during debugging it could be set to 5ms!?)
+    timer_rtt_dap_interleave = xTimerCreate("RTT/DAP interleave timeout", pdMS_TO_TICKS(20), pdFALSE, NULL, rtt_cb_verify_timeout);
 
     xTaskCreate(rtt_io_thread, "RTT-IO", configMINIMAL_STACK_SIZE, NULL, task_prio, &task_rtt_console);
     if (task_rtt_console == NULL)

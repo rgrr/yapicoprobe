@@ -286,7 +286,7 @@ static void rp2350_init_arm_core0(void)
         picoprobe_info("Setting Current Domain Secure in DSCSR\n");
         (void)swd_write_word(DCB_DSCSR, (dscsr & ~DSCSR_CDSKEY) | DSCSR_CDS);
         (void)swd_read_word(DCB_DSCSR, &dscsr);
-        picoprobe_info("DSCSR*: %08x\n", dscsr);
+        picoprobe_info("DSCSR*: %08x\n", (unsigned int)dscsr);
     }
 }   // rp2350_init_arm_core0
 #endif

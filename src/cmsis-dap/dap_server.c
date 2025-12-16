@@ -213,7 +213,7 @@ void dap_task(void *ptr)
         // post: data fetched from stream
 
 #if OPT_RTT_WHILE_DEBUGGING  // EXPERIMENTAL FEATURE
-        if (rx_len == 0  &&  ev == 0) {
+        if (dap_tool != E_DAPTOOL_PROBERS  &&  rx_len == 0  &&  ev == 0) {   // do not do it for probe-rs
             if (swd_connected) {
                 //
                 // try to receive RTT data while debugging if there is no DAP command pending
