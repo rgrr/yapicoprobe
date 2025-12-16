@@ -388,10 +388,13 @@ void usb_thread(void *ptr)
     vTaskCoreAffinitySet(tud_taskhandle, 1);
 #endif
 
+#if 0
+    // TODO is this really required?  rtt_io does this periodically
     // do a first initialization, dynamic target detection is done in rtt_console
     if (g_board_info.prerun_board_config != NULL) {
         g_board_info.prerun_board_config();
     }
+#endif
 
 #if OPT_TARGET_UART
     cdc_uart_init(UART_TASK_PRIO);
@@ -503,8 +506,52 @@ void usb_thread(void *ptr)
 
 
 
+#define xINC_TEST
+#ifdef INC_TEST
+    #include "cmsis-dap/dap_util.h"
+#endif
+
 int main(void)
 {
+#ifdef INC_TEST
+    // some test data
+    {
+        const uint8_t test_1[] = {0x05, 0x00, 0x04,                  // 4 transfers
+                                  0x08, 0x02, 0x2d, 0x00, 0x00,      // write
+                                  0x01, 0x52, 0x00, 0x80, 0x03,      // write
+                                  0x08, 0xf2, 0x4d, 0x00, 0x00,      // write
+                                  0x0f};                             // read
+        const uint8_t test_2[] = {0x05, 0x00, 0x09,
+                                  0x05, 0x00, 0x02, 0x00, 0x10,
+                                  0x0f,
+                                  0x0f,
+                                  0x0f,
+                                  0x0f,
+                                  0x0f,
+                                  0x0f,
+                                  0x0f,
+                                  0x0f};
+        const uint8_t test_3[] = {0x05, 0x00, 0x39,
+                                  0x05, 0x20, 0x0a, 0x00, 0x10,
+                                  0x0f, 0x0f, 0x0f, 0x0f, 0x0f, 0x0f, 0x0f, 0x0f,
+                                  0x0f, 0x0f, 0x0f, 0x0f, 0x0f, 0x0f, 0x0f, 0x0f,
+                                  0x0f, 0x0f, 0x0f, 0x0f, 0x0f, 0x0f, 0x0f, 0x0f,
+                                  0x0f, 0x0f, 0x0f, 0x0f, 0x0f, 0x0f, 0x0f, 0x0f,
+                                  0x0f, 0x0f, 0x0f, 0x0f, 0x0f, 0x0f, 0x0f, 0x0f,
+                                  0x0f, 0x0f, 0x0f, 0x0f, 0x0f, 0x0f, 0x0f, 0x0f,
+                                  0x0f, 0x0f, 0x0f, 0x0f, 0x0f, 0x0f, 0x0f, 0x0f,
+                                  0x00};
+        uint32_t r;
+
+        r = DAP_GetCommandLength(test_1, sizeof(test_1));
+        assert(r == sizeof(test_1));
+        r = DAP_GetCommandLength(test_2, sizeof(test_2));
+        assert(r == sizeof(test_2));
+        r = DAP_GetCommandLength(test_3, sizeof(test_3));
+        //assert(r == sizeof(test_3));
+    }
+#endif
+
     board_init();
     tusb_init();
     ini_init();                              // for debugging this must be moved below cdc_debug_init()
