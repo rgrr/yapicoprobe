@@ -180,6 +180,10 @@ static uint32_t search_for_rtt_cb(uint32_t prev_rtt_cb)
     bool ok;
     uint32_t rtt_cb = 0;
 
+    if (dap_is_connected()) {
+        xTimerReset(timer_rtt_dap_interleave, 100);
+    }
+
     // check parameter
     if ((prev_rtt_cb != 0  &&  prev_rtt_cb < TARGET_RAM_START)  ||  prev_rtt_cb > TARGET_RAM_END - sizeof(EXT_SEGGER_RTT_CB_HEADER)) {
         prev_rtt_cb = 0;
@@ -196,7 +200,16 @@ static uint32_t search_for_rtt_cb(uint32_t prev_rtt_cb)
         uint32_t start_search = (prev_rtt_cb < TARGET_RAM_START) ? TARGET_RAM_START : prev_rtt_cb + segger_alignment;
         for (uint32_t addr = start_search;  addr <= TARGET_RAM_END - sizeof(buf);  addr += sizeof(buf) - sizeof(seggerRTT)) {
             ok = swd_read_memory(addr, buf, sizeof(buf));
-            if ( !ok  ||  sw_unlock_requested()) {
+
+            if ( !ok) {
+                break;
+            }
+            else if (dap_is_connected()) {
+                if (sw_unlock_requested()  &&  !xTimerIsTimerActive(timer_rtt_dap_interleave)) {
+                    break;
+                }
+            }
+            else if (sw_unlock_requested()) {
                 break;
             }
 
@@ -205,6 +218,10 @@ static uint32_t search_for_rtt_cb(uint32_t prev_rtt_cb)
                 break;
             }
         }
+    }
+
+    if (dap_is_connected()) {
+        xTimerStop(timer_rtt_dap_interleave, 100);
     }
     return rtt_cb;
 }   // search_for_rtt_cb
@@ -490,7 +507,9 @@ static void do_rtt_io(uint32_t rtt_cb)
     }
 
     // do operations
-    xTimerReset(timer_rtt_dap_interleave, 100);
+    if (dap_is_connected()) {
+        xTimerReset(timer_rtt_dap_interleave, 100);
+    }
     rtt_console_running = true;
     probe_rtt_cb = true;
     ok = true;
@@ -597,7 +616,9 @@ static void do_rtt_io(uint32_t rtt_cb)
     }
 //    printf("ee\n");
     rtt_console_running = false;
-    xTimerStop(timer_rtt_dap_interleave, 100);
+    if (dap_is_connected()) {
+        xTimerStop(timer_rtt_dap_interleave, 100);
+    }
 }   // do_rtt_io
 
 
