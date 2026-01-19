@@ -102,7 +102,7 @@
 #define _DAP_PACKET_COUNT_PROBERS   2
 #define _DAP_PACKET_SIZE_PROBERS    1024
 #define _DAP_PACKET_COUNT_PYOCD     2
-#define _DAP_PACKET_SIZE_PYOCD      512
+#define _DAP_PACKET_SIZE_PYOCD      1024
 #define _DAP_PACKET_COUNT_UNKNOWN   1
 #define _DAP_PACKET_SIZE_UNKNOWN    64
 
@@ -140,35 +140,37 @@ uint16_t dap_packet_size  = _DAP_PACKET_SIZE_UNKNOWN;
 
 
 #if OPT_CMSIS_DAPV2
+
+#if TUSB_VERSION_NUMBER <= 2000  // 0.20.0
 void tud_vendor_rx_cb(uint8_t itf, uint8_t const* buffer, uint16_t bufsize)
+#else
+void tud_vendor_rx_cb(uint8_t itf, uint8_t const* buffer, uint32_t bufsize)
+#endif
 /**
  * Put all the received data into a stream.  Actual execution is done in dap_task()
  */
 {
     bool send_event = false;
 
-//    picoprobe_info("rx: %d, %d\n", itf, bufsize);
+//    picoprobe_info("rx: %d, %p, %d\n", itf, buffer, (int)bufsize);
 
     if (itf != 0) {
         return;
     }
 
-    while (bufsize != 0) {
-        uint8_t tmp_buf[64];
-        uint16_t n = MIN(bufsize, sizeof(tmp_buf));
+    while (tud_vendor_available()) {
+        uint8_t  buf[64];
+        uint32_t n = tud_vendor_read(buf, sizeof(buf));
 
-        tud_vendor_read(tmp_buf, n);
-
-        if (n == 1  &&  tmp_buf[0] == 0  &&  dap_tool == E_DAPTOOL_PYOCD) {
-            // this is a special pyocd hack (and of course openocd does not like it)
-//            picoprobe_info("-----------pyocd hack\n");
+        if (n == 1  &&  buf[0] == 0  &&  dap_tool == E_DAPTOOL_PYOCD) {
+            // this is a special pyocd (<= 0.42.0) hack (and of course openocd does not like it)
+            // see https://github.com/pyocd/pyOCD/issues/1871
+            picoprobe_info("-----------pyocd hack\n");
         }
         else {
-            xStreamBufferSend(dap_stream, tmp_buf, n, 0);
+            xStreamBufferSend(dap_stream, buf, n, 0);
             send_event = true;
         }
-
-        bufsize -= n;
     }
 
     if (send_event) {
