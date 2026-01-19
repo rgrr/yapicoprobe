@@ -163,7 +163,8 @@ void tud_vendor_rx_cb(uint8_t itf, uint8_t const* buffer, uint32_t bufsize)
         uint32_t n = tud_vendor_read(buf, sizeof(buf));
 
         if (n == 1  &&  buf[0] == 0  &&  dap_tool == E_DAPTOOL_PYOCD) {
-            // this is a special pyocd hack (and of course openocd does not like it)
+            // this is a special pyocd (<= 0.42.0) hack (and of course openocd does not like it)
+            // see https://github.com/pyocd/pyOCD/issues/1871
             picoprobe_info("-----------pyocd hack\n");
         }
         else {
