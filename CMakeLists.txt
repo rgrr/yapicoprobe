@@ -5,6 +5,7 @@
 # - PICO_BOARD                   pico|pico_w|pico2|pico_debug_probe, default "pico"
 # - PICOPROBE_VERSION_MAJOR      major version number
 # - PICOPROBE_VERSION_MINOR      minor version number
+# - PICOPROBE_VERSION_PATCH      patch version number
 # - lot more options below
 #
 # - GIT_HASH                     short git hash
@@ -100,19 +101,21 @@ pico_sdk_init()
 #
 # set some things inherited from Makefile / command line
 #
-if(PICOPROBE_VERSION_MAJOR)
-        add_definitions(-DPICOPROBE_VERSION_MAJOR=${PICOPROBE_VERSION_MAJOR})
-else()
-        set(PICOPROBE_VERSION_MAJOR 0)
+if(NOT PICOPROBE_VERSION_MAJOR)
+    set(PICOPROBE_VERSION_MAJOR 0)
 endif()
-if(PICOPROBE_VERSION_MINOR)
-        add_definitions(-DPICOPROBE_VERSION_MINOR=${PICOPROBE_VERSION_MINOR})
-else()
-        set(PICOPROBE_VERSION_MINOR 0)
+if(NOT PICOPROBE_VERSION_MINOR)
+    set(PICOPROBE_VERSION_MINOR 0)
 endif()
+if(NOT PICOPROBE_VERSION_PATCH)
+    set(PICOPROBE_VERSION_PATCH 0)
+endif()
+add_definitions(-DPICOPROBE_VERSION_MAJOR=${PICOPROBE_VERSION_MAJOR})
+add_definitions(-DPICOPROBE_VERSION_MINOR=${PICOPROBE_VERSION_MINOR})
+add_definitions(-DPICOPROBE_VERSION_PATCH=${PICOPROBE_VERSION_PATCH})
 
 project(${PROJECT}
-        VERSION ${PICOPROBE_VERSION_MAJOR}.${PICOPROBE_VERSION_MINOR}
+        VERSION ${PICOPROBE_VERSION_MAJOR}.${PICOPROBE_VERSION_MINOR}.${PICOPROBE_VERSION_PATCH}
         DESCRIPTION "YAPicoprobe CMSIS-DAP"
         HOMEPAGE_URL https://github.com/rgrr/yapicoprobe
         LANGUAGES C CXX ASM
@@ -134,18 +137,21 @@ if(NOT OPT_MCU_FORCE_CLOCK_MHZ STREQUAL "")
     add_compile_definitions(OPT_MCU_FORCE_CLOCK_MHZ=${OPT_MCU_FORCE_CLOCK_MHZ})
 endif()
 
-# set version string to "x.yy"
+# set version string to "x.yy.zz"
 # there are perhaps smarter ways...
+set(V_MINOR "")
 if(PICOPROBE_VERSION_MINOR LESS "10")
-        add_definitions(-DPICOPROBE_VERSION_STRING="${PICOPROBE_VERSION_MAJOR}.0${PICOPROBE_VERSION_MINOR}")
-else()
-        add_definitions(-DPICOPROBE_VERSION_STRING="${PICOPROBE_VERSION_MAJOR}.${PICOPROBE_VERSION_MINOR}")
+    set(V_MINOR "0")
 endif()
+set(V_PATCH "")
+if(PICOPROBE_VERSION_PATCH LESS "10")
+    set(V_PATCH "0")
+endif()
+add_definitions(-DPICOPROBE_VERSION_STRING="${PICOPROBE_VERSION_MAJOR}.${V_MINOR}${PICOPROBE_VERSION_MINOR}.${V_PATCH}${PICOPROBE_VERSION_PATCH}")
 
 if(GIT_HASH)
-        add_definitions(-DGIT_HASH="${GIT_HASH}")
+    add_definitions(-DGIT_HASH="${GIT_HASH}")
 endif()
-
 # Be very careful with code which has to run on the target CPU, the following options have been found by trial and error,
 # actually the best thing would be to include binary blobs of precompiled functions, just like pyocd/daplink is doing 
 if(CMAKE_C_COMPILER_ID STREQUAL "Clang")

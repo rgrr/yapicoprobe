@@ -2,8 +2,9 @@
 #
 # ATTENTION: to get the version number & git hash into the image, cmake-create-* has to be invoked.
 #
-VERSION_MAJOR        := 1
-VERSION_MINOR        := 25
+VERSION_MAJOR        := 2
+VERSION_MINOR        := 2
+VERSION_PATCH        := 0
 
 BUILD_DIR            := _build
 BUILDEE_DIR          := _buildee
@@ -14,6 +15,7 @@ GIT_HASH := $(shell git rev-parse --short HEAD)
 
 CMAKE_FLAGS  = -DPICOPROBE_VERSION_MAJOR=$(VERSION_MAJOR)
 CMAKE_FLAGS += -DPICOPROBE_VERSION_MINOR=$(VERSION_MINOR)
+CMAKE_FLAGS += -DPICOPROBE_VERSION_PATCH=$(VERSION_PATCH)
 CMAKE_FLAGS += -DPROJECT=$(PROJECT)
 CMAKE_FLAGS += -DGIT_HASH=$(GIT_HASH)
 CMAKE_FLAGS += -DCMAKE_EXPORT_COMPILE_COMMANDS=1
@@ -238,6 +240,20 @@ debuggEE-flash-probe-rs:
 	@echo "ok."
 
 
+.PHONY: debuggEE-flash-erase
+debuggEE-flash-erase:
+	# probe-rs does not erase!
+	#probe-rs erase --probe 2e8a:000c:$(DEBUGGER_SERNO) --allow-erase-all
+	
+	# äh... how to erase flash with openocd?
+	#$(OPENOCD) -s $(OPENOCD_S) -f interface/cmsis-dap.cfg -f target/rp2350.cfg                                        \
+	#           -c "adapter speed 6000; adapter serial $(DEBUGGER_SERNO)"                                              \
+	#           -c "flash init; flash list; flash banks; init; flash erase_address 0x10000000 0x10000; init; exit;"
+	# and this one is slow because chip erase is not implemented in the blobs (src/daplink-pico/family/raspberry/flash_blob.c)
+	pyocd erase --mass
+	@echo "ok."
+
+
 .PHONY: debuggEE-reset
 debuggEE-reset:
 	pyocd reset -v -f 6M --probe $(DEBUGGER_SERNO)
@@ -260,6 +276,15 @@ cmake-create-debuggEE: clean-build-debuggEE
 	         -DPICO_CLIB=$(DEBUGGEE_CLIB)                                                                              \
 	         -DOPT_NET=NCM -DOPT_PROBE_DEBUG_OUT=RTT                                                                   \
 	         -DOPT_SIGROK=0 -DOPT_MSC=0 -DOPT_CMSIS_DAPV1=0 -DOPT_CMSIS_DAPV2=0 -DOPT_TARGET_UART=1
+
+
+.PHONY: cmake-create-debuggEE-release
+cmake-create-debuggEE-release: clean-build-debuggEE
+	cmake -B $(BUILDEE_DIR) -G Ninja -DCMAKE_BUILD_TYPE=Release -DPICO_BOARD=$(PICO_BOARD)                             \
+	         $(CMAKE_FLAGS)                                                                                            \
+	         -DPICO_CLIB=$(DEBUGGEE_CLIB)                                                                              \
+	         -DOPT_NET=NCM -DOPT_PROBE_DEBUG_OUT=RTT                                                                   \
+	         -DOPT_SIGROK=1 -DOPT_MSC=0 -DOPT_CMSIS_DAPV1=0 -DOPT_CMSIS_DAPV2=0 -DOPT_TARGET_UART=1
 
 
 .PHONY: cmake-create-debugger
