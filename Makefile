@@ -151,20 +151,20 @@ create-images:
 	#
 	$(MAKE) cmake-create-release-clang PICO_BOARD=pico
 	$(MAKE) all
-	cp $(BUILD_DIR)/$(PROJECT).uf2 images/yapicoprobe-$(shell printf "%02d%02d" $(VERSION_MAJOR) $(VERSION_MINOR))-pico-$(GIT_HASH).uf2
+	cp $(BUILD_DIR)/$(PROJECT).uf2 images/yapicoprobe-$(shell printf "%02d%02d%02d" $(VERSION_MAJOR) $(VERSION_MINOR) $(VERSION_PATCH))-pico-$(GIT_HASH).uf2
 	#
 	# does not compile with clang because of missing __heap_start/end
 	$(MAKE) cmake-create-release-clang PICO_BOARD=pico_w
 	$(MAKE) all
-	cp $(BUILD_DIR)/$(PROJECT).uf2 images/yapicoprobe-$(shell printf "%02d%02d" $(VERSION_MAJOR) $(VERSION_MINOR))-picow-$(GIT_HASH).uf2
+	cp $(BUILD_DIR)/$(PROJECT).uf2 images/yapicoprobe-$(shell printf "%02d%02d%02d" $(VERSION_MAJOR) $(VERSION_MINOR) $(VERSION_PATCH))-picow-$(GIT_HASH).uf2
 	#
 	$(MAKE) cmake-create-release-clang PICO_BOARD=pico_debug_probe
 	$(MAKE) all
-	cp $(BUILD_DIR)/$(PROJECT).uf2 images/yapicoprobe-$(shell printf "%02d%02d" $(VERSION_MAJOR) $(VERSION_MINOR))-picodebugprobe-$(GIT_HASH).uf2
+	cp $(BUILD_DIR)/$(PROJECT).uf2 images/yapicoprobe-$(shell printf "%02d%02d%02d" $(VERSION_MAJOR) $(VERSION_MINOR) $(VERSION_PATCH))-picodebugprobe-$(GIT_HASH).uf2
 	#
 	$(MAKE) cmake-create-release-clang PICO_BOARD=pico2
 	$(MAKE) all
-	cp $(BUILD_DIR)/$(PROJECT).uf2 images/yapicoprobe-$(shell printf "%02d%02d" $(VERSION_MAJOR) $(VERSION_MINOR))-pico2-$(GIT_HASH).uf2
+	cp $(BUILD_DIR)/$(PROJECT).uf2 images/yapicoprobe-$(shell printf "%02d%02d%02d" $(VERSION_MAJOR) $(VERSION_MINOR) $(VERSION_PATCH))-pico2-$(GIT_HASH).uf2
 	#
 	# put development environment in a clean state
 	$(MAKE) cmake-create-debug-clang
