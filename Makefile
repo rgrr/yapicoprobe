@@ -25,7 +25,12 @@ CMAKE_FLAGS += -DCMAKE_EXPORT_COMPILE_COMMANDS=1
 
 ifeq ($(PICO_BOARD),)
     # pico|pico_w|pico_debug_probe|pico2
-    PICO_BOARD := pico2
+    PICO_BOARD := pico
+endif
+
+PICO_CHIP := rp2040
+ifeq ($(PICO_BOARD),pico2)
+    PICO_CHIP := rp2350
 endif
 
 
@@ -66,7 +71,7 @@ details: all
 .PHONY: cmake-create-debug
 cmake-create-debug: clean-build
 	cmake -B $(BUILD_DIR) -G Ninja -DCMAKE_BUILD_TYPE=Debug -DPICO_BOARD=$(PICO_BOARD)                                 \
-	      $(if $(OPT_SIGROK),-DOPT_SIGROK=$(OPT_SIGROK)) $(CMAKE_FLAGS)                                                \
+	      $(if $(OPT_SIGROK),-DOPT_SIGROK=$(OPT_SIGROK))                                                               \
 	      -DPICO_CLIB=newlib                                                                                           \
 	      $(CMAKE_FLAGS)
 
@@ -75,7 +80,7 @@ cmake-create-debug: clean-build
 .PHONY: cmake-create-release
 cmake-create-release: clean-build
 	cmake -B $(BUILD_DIR) -G Ninja -DCMAKE_BUILD_TYPE=Release -DPICO_BOARD=$(PICO_BOARD)                               \
-	      $(if $(OPT_SIGROK),-DOPT_SIGROK=$(OPT_SIGROK)) $(CMAKE_FLAGS)                                                \
+	      $(if $(OPT_SIGROK),-DOPT_SIGROK=$(OPT_SIGROK))                                                               \
 	      -DPICO_CLIB=newlib                                                                                           \
 	      $(CMAKE_FLAGS)
 
@@ -149,16 +154,16 @@ create-images:
 	# with SDK2 clang no longer works.  This is a TODO
 	mkdir -p images
 	#
-	$(MAKE) cmake-create-release PICO_BOARD=pico
+	$(MAKE) cmake-create-release-clang PICO_BOARD=pico
 	$(MAKE) all
 	cp $(BUILD_DIR)/$(PROJECT).uf2 images/yapicoprobe-$(shell printf "%02d%02d%02d" $(VERSION_MAJOR) $(VERSION_MINOR) $(VERSION_PATCH))-pico-$(GIT_HASH).uf2
 	#
 	# does not compile with clang because of missing __heap_start/end
-	$(MAKE) cmake-create-release PICO_BOARD=pico_w
+	$(MAKE) cmake-create-release-clang PICO_BOARD=pico_w
 	$(MAKE) all
 	cp $(BUILD_DIR)/$(PROJECT).uf2 images/yapicoprobe-$(shell printf "%02d%02d%02d" $(VERSION_MAJOR) $(VERSION_MINOR) $(VERSION_PATCH))-picow-$(GIT_HASH).uf2
 	#
-	$(MAKE) cmake-create-release PICO_BOARD=pico_debug_probe
+	$(MAKE) cmake-create-release-clang PICO_BOARD=pico_debug_probe
 	$(MAKE) all
 	cp $(BUILD_DIR)/$(PROJECT).uf2 images/yapicoprobe-$(shell printf "%02d%02d%02d" $(VERSION_MAJOR) $(VERSION_MINOR) $(VERSION_PATCH))-picodebugprobe-$(GIT_HASH).uf2
 	#
@@ -217,15 +222,14 @@ all-debuggEE:
 debuggEE-flash:
 	$(MAKE) all-debuggEE
 	pyocd flash -f 6M --probe $(DEBUGGER_SERNO) -e auto $(BUILDEE_DIR)/$(PROJECT).hex
-	pyocd reset -f 6M --probe $(DEBUGGER_SERNO)
 	@echo "ok."
 
 .PHONY: debuggEE-flash-openocd
 debuggEE-flash-openocd:
 	$(MAKE) all-debuggEE
 	# openocd does much faster flashing
-	$(OPENOCD) -s $(OPENOCD_S) -f interface/cmsis-dap.cfg -f target/rp2350.cfg                                        \
-	           -c "adapter speed 6000; adapter serial $(DEBUGGER_SERNO)"                                              \
+	$(OPENOCD) -s $(OPENOCD_S) -f interface/cmsis-dap.cfg -f target/$(PICO_CHIP).cfg                                   \
+	           -c "adapter speed 6000; adapter serial $(DEBUGGER_SERNO)"                                               \
 	           -c "program {$(BUILDEE_DIR)/$(PROJECT).hex}  verify; exit;"
 	# "pyocd reset" required to start
 	pyocd reset -f 6M --probe $(DEBUGGER_SERNO)
@@ -234,9 +238,9 @@ debuggEE-flash-openocd:
 .PHONY: debuggEE-flash-probe-rs
 debuggEE-flash-probe-rs:
 	$(MAKE) all-debuggEE
-	#probe-rs run      --speed 6000 --probe 2e8a:000c:$(DEBUGGER_SERNO) --rtt-scan-memory $(BUILDEE_DIR)/$(PROJECT).elf
-	probe-rs download --speed 6000 --probe 2e8a:000c:$(DEBUGGER_SERNO) --verify                 $(BUILDEE_DIR)/$(PROJECT).elf
-	probe-rs reset    --speed 6000 --probe 2e8a:000c:$(DEBUGGER_SERNO)
+	#probe-rs run      --chip $(PICO_CHIP) --speed 6000 --probe 2e8a:000c:$(DEBUGGER_SERNO) --rtt-scan-memory $(BUILDEE_DIR)/$(PROJECT).elf
+	probe-rs download --chip $(PICO_CHIP) --speed 6000 --probe 2e8a:000c:$(DEBUGGER_SERNO) --verify          $(BUILDEE_DIR)/$(PROJECT).elf
+	probe-rs reset    --chip $(PICO_CHIP) --speed 6000 --probe 2e8a:000c:$(DEBUGGER_SERNO)
 	@echo "ok."
 
 
@@ -246,7 +250,7 @@ debuggEE-flash-erase:
 	#probe-rs erase --probe 2e8a:000c:$(DEBUGGER_SERNO) --allow-erase-all
 	
 	# äh... how to erase flash with openocd?
-	#$(OPENOCD) -s $(OPENOCD_S) -f interface/cmsis-dap.cfg -f target/rp2350.cfg                                        \
+	#$(OPENOCD) -s $(OPENOCD_S) -f interface/cmsis-dap.cfg -f target/$(PICO_CHIP).cfg                                  \
 	#           -c "adapter speed 6000; adapter serial $(DEBUGGER_SERNO)"                                              \
 	#           -c "flash init; flash list; flash banks; init; flash erase_address 0x10000000 0x10000; init; exit;"
 	# and this one is slow because chip erase is not implemented in the blobs (src/daplink-pico/family/raspberry/flash_blob.c)
@@ -260,21 +264,32 @@ debuggEE-reset:
 
 .PHONY: debuggEE-reset-openocd
 debuggEE-reset-openocd:
-	$(OPENOCD) -s $(OPENOCD_S) -f interface/cmsis-dap.cfg -f target/rp2350.cfg                                        \
-	           -c "adapter speed 6000; adapter serial $(DEBUGGER_SERNO)"                                              \
+	$(OPENOCD) -s $(OPENOCD_S) -f interface/cmsis-dap.cfg -f target/$(PICO_CHIP).cfg                                   \
+	           -c "adapter speed 6000; adapter serial $(DEBUGGER_SERNO)"                                               \
 	           -c "init; exit;"
 
 .PHONY: debuggEE-reset-probe-rs
 debuggEE-reset-probe-rs:
-	probe-rs reset --speed 6000 --probe 2e8a:000c:$(DEBUGGER_SERNO)
+	probe-rs reset --chip $(PICO_CHIP) --speed 6000 --probe 2e8a:000c:$(DEBUGGER_SERNO)
 
 
 .PHONY: cmake-create-debuggEE
 cmake-create-debuggEE: clean-build-debuggEE
 	cmake -B $(BUILDEE_DIR) -G Ninja -DCMAKE_BUILD_TYPE=Debug -DPICO_BOARD=$(PICO_BOARD)                               \
 	         $(CMAKE_FLAGS)                                                                                            \
-	         -DPICO_CLIB=$(DEBUGGEE_CLIB)                                                                              \
-	         -DOPT_NET=NCM -DOPT_PROBE_DEBUG_OUT=RTT                                                                   \
+ 	         -DPICO_CLIB=$(DEBUGGEE_CLIB)                                                                              \
+	         -DOPT_NET= -DOPT_PROBE_DEBUG_OUT=RTT                                                                      \
+	         -DOPT_SIGROK=0 -DOPT_MSC=0 -DOPT_CMSIS_DAPV1=0 -DOPT_CMSIS_DAPV2=0 -DOPT_TARGET_UART=1
+
+
+.PHONY: cmake-create-debuggEE-clang
+cmake-create-debuggEE-clang: clean-build-debuggEE
+	export PICO_TOOLCHAIN_PATH=~/bin/llvm-arm-none-eabi/bin;                                                           \
+	cmake -B $(BUILDEE_DIR) -G Ninja -DCMAKE_BUILD_TYPE=Debug -DPICO_BOARD=$(PICO_BOARD)                               \
+	         $(CMAKE_FLAGS)                                                                                            \
+ 	         -DPICO_CLIB=llvm_libc                                                                                     \
+	         -DPICO_COMPILER=pico_arm_clang                                                                            \
+	         -DOPT_NET= -DOPT_PROBE_DEBUG_OUT=RTT                                                                      \
 	         -DOPT_SIGROK=0 -DOPT_MSC=0 -DOPT_CMSIS_DAPV1=0 -DOPT_CMSIS_DAPV2=0 -DOPT_TARGET_UART=1
 
 
@@ -283,7 +298,7 @@ cmake-create-debuggEE-release: clean-build-debuggEE
 	cmake -B $(BUILDEE_DIR) -G Ninja -DCMAKE_BUILD_TYPE=Release -DPICO_BOARD=$(PICO_BOARD)                             \
 	         $(CMAKE_FLAGS)                                                                                            \
 	         -DPICO_CLIB=$(DEBUGGEE_CLIB)                                                                              \
-	         -DOPT_NET=NCM -DOPT_PROBE_DEBUG_OUT=RTT                                                                   \
+	         -DOPT_NET= -DOPT_PROBE_DEBUG_OUT=RTT                                                                      \
 	         -DOPT_SIGROK=1 -DOPT_MSC=0 -DOPT_CMSIS_DAPV1=0 -DOPT_CMSIS_DAPV2=0 -DOPT_TARGET_UART=1
 
 

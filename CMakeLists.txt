@@ -52,14 +52,17 @@ option(OPT_SPECIAL_CLK_FOR_PIO "Ignore clock frequency request of 1MHz (this is 
 
 
 #
+# ATTENTION: IPO must be off, because clang currently requires ld for linking.
+#            lld optimizes too much at least for rp2040
+# 
 # enable LTO for clang release builds
 #
-if("${PICO_COMPILER}" STREQUAL "pico_arm_clang")
-    if(NOT "${CMAKE_BUILD_TYPE}" STREQUAL "Debug")
-        message(STATUS "Link time optimization for clang release builds enabled")
-        set(CMAKE_INTERPROCEDURAL_OPTIMIZATION ON)
-    endif()
-endif()
+#if("${PICO_COMPILER}" STREQUAL "pico_arm_clang")
+#    if(NOT "${CMAKE_BUILD_TYPE}" STREQUAL "Debug")
+#        message(STATUS "Link time optimization for clang release builds enabled")
+#        set(CMAKE_INTERPROCEDURAL_OPTIMIZATION ON)
+#    endif()
+#endif()
 
 #
 # UART as stdio must be told the SDK
