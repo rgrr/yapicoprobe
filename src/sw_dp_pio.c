@@ -44,23 +44,42 @@ volatile uint32_t cached_delay = 0;
 //   return: none
 void __TIME_CRITICAL_FUNCTION(SWJ_Sequence)(uint32_t count, const uint8_t *data)
 {
-    uint32_t bits;
     uint32_t n;
 
     if (DAP_Data.clock_delay != cached_delay) {
-//        picoprobe_info("SWJ_Sequence: %d %d\n", DAP_Data.clock_delay, cached_delay);
+//        picoprobe_info("SWJ_Sequence: %d %d %dkHz\n", (int)DAP_Data.clock_delay, (int)cached_delay, (int)MAKE_KHZ(DAP_Data.fast_clock, DAP_Data.clock_delay));
         probe_set_swclk_freq_khz(MAKE_KHZ(DAP_Data.fast_clock, DAP_Data.clock_delay), true);
         cached_delay = DAP_Data.clock_delay;
     }
-    //  picoprobe_debug("SWJ sequence count = %lu FDB=0x%2x\n", count, data[0]);
+//    picoprobe_info("SWJ sequence count = %lu FDB=0x%2x\n", count, data[0]);
     n = count;
     while (n > 0) {
-        if (n > 8)
-            bits = 8;
-        else
-            bits = n;
-        probe_write_bits(bits, *data++);
-        n -= bits;
+        if (n > 32) {
+            uint32_t w = data[0] + (data[1] << 8) + (data[2] << 16) + (data[3] << 24);
+            probe_write_bits(32, w);
+            data += 4;
+            n -= 32;
+        }
+        else if (n > 24) {
+            uint32_t w = data[0] + (data[1] << 8) + (data[2] << 16);
+            probe_write_bits(24, w);
+            data += 3;
+            n -= 24;
+        }
+        else if (n > 16) {
+            uint16_t w = data[0] + (data[1] << 8);
+            probe_write_bits(16, w);
+            data += 2;
+            n -= 16;
+        }
+        else if (n > 8) {
+            probe_write_bits(8, *data++);
+            n -= 8;
+        }
+        else {
+            probe_write_bits(n, *data);
+            n = 0;
+        }
     }
 }   // SWJ_Sequence
 
@@ -73,11 +92,10 @@ void __TIME_CRITICAL_FUNCTION(SWJ_Sequence)(uint32_t count, const uint8_t *data)
 //   return: none
 void __TIME_CRITICAL_FUNCTION(SWD_Sequence)(uint32_t info, const uint8_t *swdo, uint8_t *swdi)
 {
-    uint32_t bits;
     uint32_t n;
 
     if (DAP_Data.clock_delay != cached_delay) {
-//        picoprobe_info("SWD_Sequence: %d %d\n", DAP_Data.clock_delay, cached_delay);
+//        picoprobe_info("SWD_Sequence: %d %d %dkHz\n", (int)DAP_Data.clock_delay, (int)cached_delay, (int)MAKE_KHZ(DAP_Data.fast_clock, DAP_Data.clock_delay));
         probe_set_swclk_freq_khz(MAKE_KHZ(DAP_Data.fast_clock, DAP_Data.clock_delay), true);
         cached_delay = DAP_Data.clock_delay;
     }
@@ -85,27 +103,73 @@ void __TIME_CRITICAL_FUNCTION(SWD_Sequence)(uint32_t info, const uint8_t *swdo, 
     if (n == 0U) {
         n = 64U;
     }
-    bits = n;
     if (info & SWD_SEQUENCE_DIN) {
-        //    picoprobe_debug("SWD sequence in, %lu\n", bits);
+//        picoprobe_info("SWD sequence in, %lu\n", n);
         while (n > 0) {
-            if (n > 8)
-                bits = 8;
-            else
-                bits = n;
-            *swdi++ = probe_read_bits(bits, true, true);
-            n -= bits;
+            uint32_t data;
+
+            if (n > 32) {
+                data = probe_read_bits(32, true, true);
+                *swdi++ = (uint8_t)(data >>  0);
+                *swdi++ = (uint8_t)(data >>  8);
+                *swdi++ = (uint8_t)(data >> 16);
+                *swdi++ = (uint8_t)(data >> 24);
+                n -= 32;
+            }
+            else if (n > 24) {
+                data = probe_read_bits(24, true, true);
+                *swdi++ = (uint8_t)(data >>  0);
+                *swdi++ = (uint8_t)(data >>  8);
+                *swdi++ = (uint8_t)(data >> 16);
+                n -= 24;
+            }
+            else if (n > 16) {
+                data = probe_read_bits(16, true, true);
+                *swdi++ = (uint8_t)(data >>  0);
+                *swdi++ = (uint8_t)(data >>  8);
+                n -= 16;
+            }
+            else if (n > 8) {
+                data = probe_read_bits(8, true, true);
+                *swdi++ = (uint8_t)(data >>  0);
+                n -= 8;
+            }
+            else {
+                data = probe_read_bits(n, true, true);
+                *swdi++ = (uint8_t)(data >>  0);
+                n = 0;
+            }
         }
     }
     else {
-        //    picoprobe_debug("SWD sequence out, %lu\n", bits);
+//        picoprobe_info("SWD sequence out, %lu\n", n);
         while (n > 0) {
-            if (n > 8)
-                bits = 8;
-            else
-                bits = n;
-            probe_write_bits(bits, *swdo++);
-            n -= bits;
+            if (n > 32) {
+                uint32_t w = swdo[0] + (swdo[1] << 8) + (swdo[2] << 16) + (swdo[3] << 24);
+                probe_write_bits(32, w);
+                swdo += 4;
+                n -= 32;
+            }
+            else if (n > 24) {
+                uint32_t w = swdo[0] + (swdo[1] << 8) + (swdo[2] << 16);
+                probe_write_bits(24, w);
+                swdo += 3;
+                n -= 24;
+            }
+            else if (n > 16) {
+                uint16_t w = swdo[0] + (swdo[1] << 8);
+                probe_write_bits(16, w);
+                swdo += 2;
+                n -= 16;
+            }
+            else if (n > 8) {
+                probe_write_bits(8, *swdo++);
+                n -= 8;
+            }
+            else {
+                probe_write_bits(n, *swdo);
+                n = 0;
+            }
         }
     }
 }   // SWD_Sequence
