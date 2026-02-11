@@ -36,10 +36,6 @@
     #include "pico/stdio/driver.h"
 #endif
 
-#if CFG_TUD_CDC
-    #include "pico/bootrom.h"
-#endif
-
 #include <stdio.h>
 #include <stdbool.h>
 #include <string.h>
@@ -103,6 +99,10 @@
 
 #if OPT_PROBE_DEBUG_OUT_RTT
     #include "RTT/SEGGER_RTT.h"
+#endif
+
+#if CFG_TUD_CDC
+    #include "pico/bootrom.h"
 #endif
 
 #ifdef NDEBUG
