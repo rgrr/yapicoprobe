@@ -140,7 +140,7 @@
     #define configRUN_FREERTOS_SECURE_ONLY          1
     #define configENABLE_FPU                        1
     #define configMAX_SYSCALL_INTERRUPT_PRIORITY    16
-    #define configCPU_CLOCK_HZ                      (120 * 1000000)
+    #define configCPU_CLOCK_HZ                      (144 * 1000000)
 #endif
 
 /* RP2040 specific */

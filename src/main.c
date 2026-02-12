@@ -101,6 +101,11 @@
     #include "RTT/SEGGER_RTT.h"
 #endif
 
+#if CFG_TUD_CDC
+    #include "pico/bootrom.h"
+    #include "hardware/watchdog.h"
+#endif
+
 #ifdef NDEBUG
     #define BUILD_TYPE "release build"
 #else
@@ -185,6 +190,14 @@ void tud_cdc_line_coding_cb(uint8_t itf, cdc_line_coding_t const* line_coding)
         cdc_uart_line_coding_cb(line_coding);
     }
 #endif
+    if (line_coding->bit_rate == 1200) {
+        // restart into BOOTSEL mode
+        reset_usb_boot(0, 0);
+    }
+    else if (line_coding->bit_rate == 2400) {
+        // restart probe
+        watchdog_reboot(0, 0, 0);
+    }
 }   // tud_cdc_line_coding_cb
 #endif
 

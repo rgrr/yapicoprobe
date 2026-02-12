@@ -1,0 +1,65 @@
+:imagesdir: png
+:source-highlighter: rouge
+:toc:
+:toclevels: 5
+
+## Fehler, Fehler, Fehler
+
+Kleines Fehlertagebuch um mir den aktuellen Frust von der Seele zu schreiben...  Die hier erwähnten Fehler sind es irgendwie alle wert, dokumentiert zu werden, damit sie nicht in Vergessenheit geraten.
+
+Das Ganze ist als kleines Tagebuch vorwärts aufgebaut.  Geschlossene Probleme werden mit [x] markiert, offene Fehler mit [ ].
+
+### 20260212 - Alles zerfällt?
+
+#### Der Anfang
+
+* [ ] im Prinzip hat alles damit angefangen, dass unter Linux die Probe nach einem Sleep oft nicht richtig erkannt wird (link:https://github.com/rgrr/yapicoprobe/issues/169[#169]). Mitunter sind die Fehler so hart, dass man die Probe abstecken muss, den Rechner neu starten und erst dann wieder anstecken darf.  Beim Neustart (Reboot) des Rechners darf die Probe ebenfalls nicht eingesteckt sein.  Das Problem tritt seit einiger Zeit auf.  Unklar ob das was mit der Probe (TinyUSB) oder mit Linux zu tun hat. Reduktion der USB-Interfaces verbessert die Situation, löst sie aber nicht vollständig.  Aktuell ist NCM der Hauptverdächtige
+* [ ] dann hat ein Anwender geschrieben, dass die Release-Binaries bei ihm auf einem RP2040-Clone nicht laufen (link:https://github.com/rgrr/yapicoprobe/issues/176[#176]). Wenn er selber compiliert, geht es.  Alte Binaries funktionieren ebenfalls.  Nicht funktionierende Binaries ab 02.02.00 (man beachte den Versionssprung).  Versuche das zu fixen haben bei ihm nicht funktioniert.  Bei mir waren das allerdings allesamt Versuche mit einem RP2350
+* [ ] mit einem RP2040 als Target bekommt man öfters ein "No Flash detected" angezeigt (link:https://github.com/rgrr/yapicoprobe/issues/179[#179]).  Das ist mir auch vorher nie aufgefallen
+
+#### (Das) Graben
+
+##### RP2040-Binaries laufen nicht
+
+Angefangen mit dem RP2040-Problem.  Als Versuchskaninchen eine PicoDebugProbe genommen.
+
+Es stellt sich raus, dass die RP2040-Binaries bei mir auch nicht laufen, wenn sie mit clang erzeugt werden.  Mit gcc funktioniert es.
+
+* [x] sehr lange mit dem clang-Buildsetup rumprobiert, verschiedene Libraries etc pp.  RP2040 mit clang kann nicht mal mit dem Debugger angeschaut werden.  RP2350 funktioniert ohne Probleme
+* [x] mit Hilfe von Gemini rausgefunden, dass es was mit dem Linken zu tun hat und der Linker zu viel wegoptimiert
+* [x] schlussendlich hilft für den clang-Build ein `-fuse-ld=ld`.  LTO/IPO muss generell abgeschaltet werden
+* [x] weiterhin muss noch `-Wl,-z,noexecstack` gemacht werden um eine nervige Warnung beim Linken wegzubekommen
+* [ ] offen ist, ob einfaches Abschalten der LTO/IPO auch geholfen hätte
+* [ ] lang ausstehenden MR (link:https://github.com/raspberrypi/pico-sdk/pull/2700[pico-sdk:#2700], 2025-10-15) entsprechend nachgebessert
+
+-> Vertrauen in den clang-Build ist aktuell eher mäßig, deshalb werden Release-Binaries wieder mit gcc gebaut
+
+##### "No Flash detected" und DP-Problem auf dem RP2040
+
+Dann das Problem mit dem "No Flash detected" angegangen.  Setup ist eine RP2350-Probe und ein RP2040-Target.
+
+Dabei ist dann aufgefallen, dass sich der Debugport manchmal so aufhängt, dass er nicht mehr einen Target-Core auswählen kann (scheint aber trotzdem irgendwie auf Kommandos zu reagieren).  Hier hilft dann nur komplettes Abstecken des Targets und wieder anstecken (HW-Reset habe ich nicht probiert).
+
+* [x] die Initialisierung des DP in link:https://github.com/rgrr/yapicoprobe/blob/master/src/daplink-pico/family/raspberry/rp2040/target_reset_rp2040.c[target_reset_rp2040.c] angeschaut. Gemini beharrt ziemlich darauf, dass die "Alert Sequence" um den DP zu starten falsch ist.  ADIv5 sagt aber was anderes.  Bei vielem Hin und Her ist mir klargeworden, dass ich den DP nicht wirklich im Griff hab bzw meine Mittel fürs Debuggen arg beschränkt sind.
+* [ ] es scheint auch gewisse Widersprüche zwischen ADIv5 und der RP2040-Implementierung zu geben, z.B. wann kann/muss/darf ein `swd_line_reset()` durchgeführt werden, wann ein `swd_read_dp(DP_IDCODE)`?
+* [ ] die korrekte Initialisierung ist noch immer unklar
+* [ ] bei diesen Spielereien das Linux-USB-Subsystem oft so zerschossen, dass nur ein Reboot (mit Reset) geholfen hat.  Z.B. ist `lsusb` einfach stehengeblieben
+* [ ] nach den gesammelten Erkenntnissen muss ebenfalls die "Alert Sequence" für den RP2350 angepasst werden
+
+##### TinyUSB
+
+Nebenbei dann bemerkt, dass ein **gcc-Release-Build nach ein paar Sekunden einfach stehenbleibt**.
+
+* [ ]  Mit einiger Sucherei (ist es FreeRTOS, PicoSDK, TinyUSB?  Und wenn ja, wo?) den genauen Merge gefunden.  Ergebnis ist ein Eintrag bei TinyUSB (link:https://github.com/hathach/tinyusb/issues/3495[TinyUSB:#3495])
+* [ ] hab das Gefühl, dass das DP-Problem von oben mit dem RP2040 jetzt weniger oft auftritt (oder gar nicht?).  Das Linux-USB-Problem ist nach wie vor vorhanden
+
+-> TinyUSB muss also erstmal auf seinem aktuellen Stand bleiben
+
+#### Was haben wir?
+
+* [ ] mutmasslich ein Problem im Linux-USB-Subsystem.  Genau dort, wo man es nicht haben möchte
+* [ ] ein Build-Problem im Pico-SDK mit clang was auch nicht gerade vertrauenseinflößend ist
+* [ ] einen Debugport, der sich nicht wirklich per SWD-Sequenz zurücksetzen lässt
+* [ ] ein unverstandenes Problem in TinyUSB
+
+In der Summe ein ziemlich erfolgreicher (aber nerviger) Tag ;-)

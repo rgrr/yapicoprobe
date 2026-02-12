@@ -206,7 +206,8 @@ void probe_set_swclk_freq_khz(uint32_t freq_khz, bool show_message)
     }
 
     if (div_int == 0) {
-        picoprobe_error("probe_set_swclk_freq: underflow of clock setup, setting clock to maximum.\n");
+        picoprobe_error("probe_set_swclk_freq: underflow of clock setup, setting clock to maximum %dkHz requested, %p %d %d).\n",
+                        (int)freq_khz, g_board_info.target_cfg, g_board_info.target_cfg->rt_max_swd_khz, g_board_info.target_cfg->rt_swd_khz);
         div_int  = 1;
         div_frac = 0;
     }

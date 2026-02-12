@@ -90,7 +90,13 @@ const uint32_t uf2_id_rp2350_sec_arm = RP2350_ARM_S_FAMILY_ID;     // Secure Arm
 #define board_id_rp2350_pico2     "7f02"          // see TARGET_RP2350_FAMILY_ID
 
 // here we can modify the otherwise constant board/target information
-target_cfg_t target_device;
+target_cfg_t target_device = {
+        .target_vendor                  = "not set",
+        .target_part_number             = "not set",
+        .rt_max_swd_khz                 = 10000,
+        .rt_swd_khz                     = 4000,
+};
+
 static char board_vendor[30];
 static char board_name[30];
 
