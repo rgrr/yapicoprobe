@@ -118,6 +118,9 @@
     //
     // !!!! pyocd does not work with _DAP_PACKET_SIZE_NEW!=64 !!!!
     //
+    // _DAP_PACKET_SIZE_NEW does not seem to be the decisive parameter, neither _DAP_PACKET_COUNT_NEW.
+    // So below are good values
+    //
     #define _DAP_PACKET_COUNT_NEW       16
     #define _DAP_PACKET_SIZE_NEW        64
 
@@ -143,6 +146,11 @@
 #else
     uint8_t  dap_packet_count = _DAP_PACKET_COUNT_NEW;
     uint16_t dap_packet_size  = _DAP_PACKET_SIZE_NEW;
+#endif
+
+#if defined(NEW_DAP)  &&  OPT_CMSIS_DAPV1
+    #define _DAP_PACKET_COUNT_HID       1
+    #define _DAP_PACKET_SIZE_HID        64
 #endif
 
 #ifndef NEW_DAP
@@ -189,7 +197,7 @@
         volatile uint32_t rd_idx;
         volatile bool     rcvDelayed;
         volatile bool     xmtRunning;
-#ifdef DAP_DEBUG
+#if DAP_DEBUG
         uint16_t dmax;
 #endif
     } queue_t;
@@ -205,6 +213,12 @@
 
     static TaskHandle_t      dap_taskhandle = NULL;
     static SemaphoreHandle_t edpt_spoon;
+
+    static bool swd_connected;
+#endif
+
+#if defined(NEW_DAP)  &&  OPT_CMSIS_DAPV1
+    static uint8_t TxDataBuffer[_DAP_PACKET_SIZE_HID];
 #endif
 
 
@@ -526,7 +540,7 @@ bool tud_vendor_control_xfer_cb(uint8_t rhport, uint8_t stage, tusb_control_requ
 
 
 
-#if OPT_CMSIS_DAPV1  &&  !defined(NEW_DAP)
+#if OPT_CMSIS_DAPV1
 static bool hid_swd_connected;
 static bool hid_swd_disconnect_requested;
 static TimerHandle_t     timer_hid_disconnect = NULL;
@@ -637,7 +651,6 @@ void tud_hid_set_report_cb(uint8_t itf, uint8_t report_id, hid_report_type_t rep
 
 
 
-#if !defined(NEW_DAP)
 bool dap_is_connected(void)
 {
     bool r = false;
@@ -651,7 +664,6 @@ bool dap_is_connected(void)
 
     return r;
 }   // dap_is_connected
-#endif
 
 
 
@@ -692,7 +704,7 @@ char * dap_cmd_string[] = {
 
 void dap_edpt_init(void)
 {
-#ifdef DAP_DEBUG
+#if DAP_DEBUG
     picoprobe_info("dap_edpt_init\n");
 #endif
     edpt_spoon = xSemaphoreCreateMutex();
@@ -703,7 +715,7 @@ void dap_edpt_init(void)
 
 bool dap_edpt_deinit(void)
 {
-#ifdef DAP_DEBUG
+#if DAP_DEBUG
     picoprobe_info("dap_edpt_deinit\n");
 #endif
     vSemaphoreDelete(edpt_spoon);
@@ -714,7 +726,7 @@ bool dap_edpt_deinit(void)
 
 void dap_edpt_reset(uint8_t __unused rhport)
 {
-#ifdef DAP_DEBUG
+#if DAP_DEBUG
     picoprobe_info("dap_edpt_reset\n");
 #endif
     itf_num = 0;
@@ -724,7 +736,7 @@ void dap_edpt_reset(uint8_t __unused rhport)
 
 uint16_t dap_edpt_open(uint8_t __unused _rhport, tusb_desc_interface_t const *itf_desc, uint16_t max_len)
 {
-#ifdef DAP_DEBUG
+#if DAP_DEBUG
     picoprobe_info("dap_edpt_open\n");
 #endif
 
@@ -773,7 +785,7 @@ uint16_t dap_edpt_open(uint8_t __unused _rhport, tusb_desc_interface_t const *it
 
 bool dap_edpt_control_xfer_cb(uint8_t __unused rhport, uint8_t stage, tusb_control_request_t const *request)
 {
-#ifdef DAP_DEBUG
+#if DAP_DEBUG
     picoprobe_info("dap_edpt_control_xfer_cb\n");
 #endif
     return false;
@@ -849,13 +861,13 @@ bool dap_edpt_xfer_cb(uint8_t __unused rhport, uint8_t ep_addr, xfer_result_t re
             }
             else
             {
-#ifdef DAP_DEBUG
+#if DAP_DEBUG
                 printf("!!!!!!!! %d %d\n", (int)requestQueue.rd_idx, (int)requestQueue.wr_idx);
 #endif
                 requestQueue.rcvDelayed = true;
             }
 
-#ifdef DAP_DEBUG
+#if DAP_DEBUG
             {
                 int diff = MOD_PACKET_COUNT(requestQueue.wr_idx - requestQueue.rd_idx);
 
@@ -922,13 +934,60 @@ void dap_thread(void *ptr)
             {
                 picoprobe_error("dap_thread(): malformed request\n");
             }
-#if 0
-            picoprobe_info("%u %u DAP cmd %s len %d %d %d\n",
+#if 1  &&  DAP_DEBUG
+            picoprobe_info("%u %u DAP cmd %s len %d %d\n",
                            (unsigned)requestQueue.wr_idx, (unsigned)requestQueue.rd_idx,
-                           dap_cmd_string[RD_SLOT_PTR(requestQueue)[0]], RD_SLOT_PTR(requestQueue)[1],
+                           dap_cmd_string[RD_SLOT_PTR(requestQueue)[0]],
                            (int)requestQueue.data_len[requestQueue.rd_idx],
                            (int)DAP_GetCommandLength(RD_SLOT_PTR(requestQueue), requestQueue.data_len[requestQueue.rd_idx]));
 #endif
+
+            //
+            // initiate SWD connect / disconnect
+            //
+            if ( !swd_connected) {
+                if ( !DAP_OfflineCommand(RD_SLOT_PTR(requestQueue))) {
+                    if (sw_lock(E_SWLOCK_DAPV2)) {
+                        swd_connected = true;
+                        picoprobe_info("=================================== DAPv2 connect, buffer: %dx%dbytes\n",
+                                       dap_packet_count, dap_packet_size);
+//                        picoprobe_debug("------------ %d (command leading to online)\n", RxDataBuffer[0]);
+                        led_state(LS_DAPV2_CONNECTED);
+                    }
+#if 0
+                    else {
+                        // TODO very obscure... did not get lock!
+                        // happens with "probe-rs info", see https://github.com/rgrr/yapicoprobe/issues/162
+                        // if we do not execute the command here, then the whole probe stucks (forever)
+                        uint32_t resp_len;
+
+                        picoprobe_debug("------------ %d (command leading to this)\n", RxDataBuffer[0]);
+                        picoprobe_error("sw_lock(%d): did not get lock\n", E_SWLOCK_DAPV2);
+                        resp_len = DAP_ExecuteCommand(RxDataBuffer, TxDataBuffer);
+                        tud_vendor_write(TxDataBuffer, resp_len & 0xffff);
+                        tud_vendor_flush();
+                    }
+#endif
+                }
+                else {
+                    // ID_DAP_Info must/can be done without a lock
+#if DAP_DEBUG
+                    picoprobe_info("-----------__ %s (execute offline)\n", dap_cmd_string[RD_SLOT_PTR(requestQueue)[0]]);
+#endif
+                }
+            }
+            else {
+                // connected:
+                if (RD_SLOT_PTR(requestQueue)[0] == ID_DAP_Disconnect) {
+                    swd_connected = false;
+                    picoprobe_info("=================================== DAPv2 disconnect target\n");
+                    led_state(LS_DAPV2_DISCONNECTED);
+                    sw_unlock(E_SWLOCK_DAPV2);
+
+                    // after disconnect wait some time before clearing dap_tool, required for probe-rs which does short disconnect/connect sequences
+//                    xTimerReset(timer_clear_dap_tool, 100);
+                }
+            }
 
             // execute DAP command
             resp_len = DAP_ExecuteCommand(RD_SLOT_PTR(requestQueue), WR_SLOT_PTR(responseQueue)) & 0xffff;
@@ -942,7 +1001,7 @@ void dap_thread(void *ptr)
             // If the buffer was full in the out callback, we need to queue up another buffer for the endpoint to consume, now that we know there is space in the buffer.
             if (requestQueue.rcvDelayed)
             {
-#ifdef DAP_DEBUG
+#if DAP_DEBUG
                 printf("........ %d %d\n", (int)requestQueue.rd_idx, (int)requestQueue.wr_idx);
 #endif
                 requestQueue.wr_idx = MOD_PACKET_COUNT(requestQueue.wr_idx + 1);
@@ -961,7 +1020,7 @@ void dap_thread(void *ptr)
             }
             else
             {
-#if 0
+#if 1  &&  DAP_DEBUG
                 picoprobe_info("%u %u DAP resp %s len %d\n",
                                (unsigned)responseQueue.wr_idx, (unsigned)responseQueue.rd_idx,
                                dap_cmd_string[WR_SLOT_PTR(responseQueue)[0]], resp_len);
