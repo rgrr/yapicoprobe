@@ -118,16 +118,17 @@
     //
     // !!!! pyocd does not work with _DAP_PACKET_SIZE_NEW!=64 !!!!
     //
-    #define _DAP_PACKET_COUNT_NEW       4
+    #define _DAP_PACKET_COUNT_NEW       16
     #define _DAP_PACKET_SIZE_NEW        64
 
-    #define DAP_DEBUG                   1
+//    #define DAP_DEBUG                   1
 
     #if (_DAP_PACKET_COUNT_NEW & (_DAP_PACKET_COUNT_NEW - 1)) != 0
-        #error "_DAP_PACKET_COUNT_NEW must be a power of 2"
+        // no more restrictions here
+//        #error "_DAP_PACKET_COUNT_NEW must be a power of 2"
     #endif
     #if (_DAP_PACKET_SIZE_NEW & (_DAP_PACKET_SIZE_NEW - 1)) != 0
-        #error "_DAP_PACKET_SIZE_NEW must be a power of 2"
+        #warning "_DAP_PACKET_SIZE_NEW should be a power of 2"
     #endif
 #endif
 
@@ -176,11 +177,10 @@
     #define DAP_INTERFACE_SUBCLASS 0x00
     #define DAP_INTERFACE_PROTOCOL 0x00
 
-    #define WR_IDX(x, n) ((x.wr_idx + (n)) % _DAP_PACKET_COUNT_NEW)
-    #define RD_IDX(x, n) ((x.rd_idx + (n)) % _DAP_PACKET_COUNT_NEW)
+    #define MOD_PACKET_COUNT(x)     (((x) + _DAP_PACKET_COUNT_NEW) % _DAP_PACKET_COUNT_NEW)
 
-    #define WR_SLOT_PTR(x) (&(x.data[WR_IDX(x, 0)][0]))
-    #define RD_SLOT_PTR(x) (&(x.data[RD_IDX(x, 0)][0]))
+    #define WR_SLOT_PTR(x) (&(x.data[x.wr_idx][0]))
+    #define RD_SLOT_PTR(x) (&(x.data[x.rd_idx][0]))
 
     typedef struct {
         uint8_t  data[_DAP_PACKET_COUNT_NEW][_DAP_PACKET_SIZE_NEW];
@@ -808,7 +808,7 @@ bool dap_edpt_xfer_cb(uint8_t __unused rhport, uint8_t ep_addr, xfer_result_t re
 
             // mark the buffer as empty & advance to next buffer
             responseQueue.data_len[responseQueue.rd_idx] = 0;
-            responseQueue.rd_idx = RD_IDX(responseQueue, 1);
+            responseQueue.rd_idx = MOD_PACKET_COUNT(responseQueue.rd_idx + 1);
 
             // start transmission of next pending response
             if (responseQueue.data_len[responseQueue.rd_idx] != 0)
@@ -837,9 +837,9 @@ bool dap_edpt_xfer_cb(uint8_t __unused rhport, uint8_t ep_addr, xfer_result_t re
 
             // Only queue the next buffer in the out callback if the queue is not full
             // If full, we set the rcvDelayed flag, which will be checked by dap thread
-            if (requestQueue.data_len[WR_IDX(requestQueue, 1)] == 0)
+            if (requestQueue.data_len[MOD_PACKET_COUNT(requestQueue.wr_idx + 1)] == 0)
             {
-                requestQueue.wr_idx = WR_IDX(requestQueue, 1);
+                requestQueue.wr_idx = MOD_PACKET_COUNT(requestQueue.wr_idx + 1);
 #if TUSB_VERSION_NUMBER <= 2000
                 usbd_edpt_xfer(rhport, ep_addr, WR_SLOT_PTR(requestQueue), _DAP_PACKET_SIZE_NEW);
 #else
@@ -849,13 +849,15 @@ bool dap_edpt_xfer_cb(uint8_t __unused rhport, uint8_t ep_addr, xfer_result_t re
             }
             else
             {
+#ifdef DAP_DEBUG
                 printf("!!!!!!!! %d %d\n", (int)requestQueue.rd_idx, (int)requestQueue.wr_idx);
+#endif
                 requestQueue.rcvDelayed = true;
             }
 
 #ifdef DAP_DEBUG
             {
-                int diff = requestQueue.wr_idx - requestQueue.rd_idx;
+                int diff = MOD_PACKET_COUNT(requestQueue.wr_idx - requestQueue.rd_idx);
 
                 if (diff > requestQueue.dmax)
                 {
@@ -935,13 +937,15 @@ void dap_thread(void *ptr)
 
             // mark the buffer as empty & advance to next buffer
             requestQueue.data_len[requestQueue.rd_idx] = 0;
-            requestQueue.rd_idx = RD_IDX(requestQueue, 1);
+            requestQueue.rd_idx = MOD_PACKET_COUNT(requestQueue.rd_idx + 1);
 
             // If the buffer was full in the out callback, we need to queue up another buffer for the endpoint to consume, now that we know there is space in the buffer.
             if (requestQueue.rcvDelayed)
             {
+#ifdef DAP_DEBUG
                 printf("........ %d %d\n", (int)requestQueue.rd_idx, (int)requestQueue.wr_idx);
-                requestQueue.wr_idx = WR_IDX(requestQueue, 1);
+#endif
+                requestQueue.wr_idx = MOD_PACKET_COUNT(requestQueue.wr_idx + 1);
 #if TUSB_VERSION_NUMBER <= 2000
                 usbd_edpt_xfer(rhport, out_ep_addr, WR_SLOT_PTR(requestQueue), _DAP_PACKET_SIZE_NEW);
 #else
@@ -967,7 +971,7 @@ void dap_thread(void *ptr)
                 xSemaphoreTake(edpt_spoon, portMAX_DELAY);
 
                 responseQueue.data_len[responseQueue.wr_idx] = resp_len;
-                responseQueue.wr_idx = WR_IDX(responseQueue, 1);
+                responseQueue.wr_idx = MOD_PACKET_COUNT(responseQueue.wr_idx + 1);
 
                 if ( !responseQueue.xmtRunning)
                 {
