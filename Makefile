@@ -41,7 +41,7 @@ endif
 #
 ifeq ($(PICO_BOARDEE),)
     # pico|pico_w|pico_debug_probe|pico2
-    PICO_BOARDEE := pico
+    PICO_BOARDEE := pico2
 endif
 
 PICO_CHIPEE := rp2040
@@ -244,7 +244,8 @@ all-debuggEE:
 .PHONY: debuggEE-flash
 debuggEE-flash:
 	$(MAKE) all-debuggEE
-	pyocd flash -f 6M --probe $(DEBUGGER_SERNO) -e auto $(BUILDEE_DIR)/$(PROJECT).hex
+	pyocd flash -t $(PICO_CHIPEE) -f 6M --probe $(DEBUGGER_SERNO) -e auto                          $(BUILDEE_DIR)/$(PROJECT).hex
+#	pyocd flash -t $(PICO_CHIPEE) -f 6M --probe $(DEBUGGER_SERNO) -e auto -L "pyocd.probe.*=debug" $(BUILDEE_DIR)/$(PROJECT).hex
 	@echo "ok."
 
 .PHONY: debuggEE-flash-openocd
@@ -255,7 +256,7 @@ debuggEE-flash-openocd:
 	           -c "adapter speed 6000; adapter serial $(DEBUGGER_SERNO)"                                               \
 	           -c "program {$(BUILDEE_DIR)/$(PROJECT).hex}  verify; exit;"
 	# "pyocd reset" required to start
-	pyocd reset -f 6M --probe $(DEBUGGER_SERNO)
+	pyocd reset -t $(PICO_CHIPEE) -f 6M --probe $(DEBUGGER_SERNO)
 	@echo "ok."
 
 .PHONY: debuggEE-flash-probe-rs
@@ -277,13 +278,13 @@ debuggEE-flash-erase:
 	#           -c "adapter speed 6000; adapter serial $(DEBUGGER_SERNO)"                                              \
 	#           -c "flash init; flash list; flash banks; init; flash erase_address 0x10000000 0x10000; init; exit;"
 	# and this one is slow because chip erase is not implemented in the blobs (src/daplink-pico/family/raspberry/flash_blob.c)
-	pyocd erase --mass
+	pyocd erase --mass -t $(PICO_CHIPEE) -f 6M --probe $(DEBUGGER_SERNO)
 	@echo "ok."
 
 
 .PHONY: debuggEE-reset
 debuggEE-reset:
-	pyocd reset -v -f 6M --probe $(DEBUGGER_SERNO)
+	pyocd reset -v -t $(PICO_CHIPEE) -f 6M --probe $(DEBUGGER_SERNO)
 
 .PHONY: debuggEE-reset-openocd
 debuggEE-reset-openocd:
@@ -302,7 +303,7 @@ cmake-create-debuggEE: clean-build-debuggEE
 	         $(CMAKE_FLAGS)                                                                                            \
  	         -DPICO_CLIB=$(DEBUGGEE_CLIB)                                                                              \
 	         -DOPT_NET= -DOPT_PROBE_DEBUG_OUT=RTT                                                                      \
-	         -DOPT_SIGROK=0 -DOPT_MSC=0 -DOPT_CMSIS_DAPV1=0 -DOPT_CMSIS_DAPV2=0 -DOPT_TARGET_UART=1
+	         -DOPT_SIGROK=0 -DOPT_MSC=0 -DOPT_CMSIS_DAPV1=0 -DOPT_CMSIS_DAPV2=1 -DOPT_TARGET_UART=1
 
 
 .PHONY: cmake-create-debuggEE-clang
@@ -313,7 +314,7 @@ cmake-create-debuggEE-clang: clean-build-debuggEE
  	         -DPICO_CLIB=llvm_libc                                                                                     \
 	         -DPICO_COMPILER=pico_arm_clang                                                                            \
 	         -DOPT_NET= -DOPT_PROBE_DEBUG_OUT=RTT                                                                      \
-	         -DOPT_SIGROK=0 -DOPT_MSC=0 -DOPT_CMSIS_DAPV1=0 -DOPT_CMSIS_DAPV2=0 -DOPT_TARGET_UART=1
+	         -DOPT_SIGROK=0 -DOPT_MSC=0 -DOPT_CMSIS_DAPV1=0 -DOPT_CMSIS_DAPV2=1 -DOPT_TARGET_UART=1
 
 
 .PHONY: cmake-create-debuggEE-release
@@ -322,7 +323,7 @@ cmake-create-debuggEE-release: clean-build-debuggEE
 	         $(CMAKE_FLAGS)                                                                                            \
 	         -DPICO_CLIB=$(DEBUGGEE_CLIB)                                                                              \
 	         -DOPT_NET= -DOPT_PROBE_DEBUG_OUT=RTT                                                                      \
-	         -DOPT_SIGROK=1 -DOPT_MSC=0 -DOPT_CMSIS_DAPV1=0 -DOPT_CMSIS_DAPV2=0 -DOPT_TARGET_UART=1
+	         -DOPT_SIGROK=1 -DOPT_MSC=0 -DOPT_CMSIS_DAPV1=0 -DOPT_CMSIS_DAPV2=1 -DOPT_TARGET_UART=1
 
 
 .PHONY: cmake-create-debugger
