@@ -111,83 +111,85 @@
     #define _DAP_PACKET_SIZE_PYOCD      1024
     #define _DAP_PACKET_COUNT_UNKNOWN   1
     #define _DAP_PACKET_SIZE_UNKNOWN    64
+
+    #define _DAP_PACKET_COUNT_HID       1
+    #define _DAP_PACKET_SIZE_HID        64
 #else
-    #define _DAP_PACKET_COUNT_OPENOCD   8
-    #define _DAP_PACKET_SIZE_OPENOCD    512
-    #define _DAP_PACKET_COUNT_PROBERS   8
-    #define _DAP_PACKET_SIZE_PROBERS    512
-    #define _DAP_PACKET_COUNT_PYOCD     8
-    #define _DAP_PACKET_SIZE_PYOCD      512
-    #define _DAP_PACKET_COUNT_UNKNOWN   8
-    #define _DAP_PACKET_SIZE_UNKNOWN    512
+    #define _DAP_PACKET_COUNT           8
+    #define _DAP_PACKET_SIZE            512
 #endif
 
-#define _DAP_PACKET_COUNT_HID       1
-#define _DAP_PACKET_SIZE_HID        64
-
-uint8_t  dap_packet_count = _DAP_PACKET_COUNT_UNKNOWN;
-uint16_t dap_packet_size  = _DAP_PACKET_SIZE_UNKNOWN;
-
-#define BUFFER_MAXSIZE_1 MAX(_DAP_PACKET_COUNT_OPENOCD*_DAP_PACKET_SIZE_OPENOCD, _DAP_PACKET_COUNT_PROBERS*_DAP_PACKET_SIZE_PROBERS)
-#define BUFFER_MAXSIZE_2 MAX(_DAP_PACKET_COUNT_PYOCD  *_DAP_PACKET_SIZE_PYOCD,   _DAP_PACKET_COUNT_UNKNOWN*_DAP_PACKET_SIZE_UNKNOWN)
-#define BUFFER_MAXSIZE   MAX(BUFFER_MAXSIZE_1, BUFFER_MAXSIZE_2)
-
-#define PACKET_MAXSIZE_1 MAX(_DAP_PACKET_SIZE_OPENOCD, _DAP_PACKET_SIZE_PROBERS)
-#define PACKET_MAXSIZE_2 MAX(_DAP_PACKET_SIZE_PYOCD,   _DAP_PACKET_SIZE_UNKNOWN)
-#define PACKET_MAXSIZE   MAX(PACKET_MAXSIZE_1, PACKET_MAXSIZE_2)
-
-#if (CFG_TUD_VENDOR_RX_BUFSIZE < PACKET_MAXSIZE)
-    #error "increase CFG_TUD_VENDOR_RX_BUFSIZE"
+#ifndef NEW_DAP
+    uint8_t  dap_packet_count = _DAP_PACKET_COUNT_UNKNOWN;
+    uint16_t dap_packet_size  = _DAP_PACKET_SIZE_UNKNOWN;
+#else
+    uint8_t  dap_packet_count = _DAP_PACKET_COUNT;
+    uint16_t dap_packet_size  = _DAP_PACKET_SIZE;
 #endif
 
-#if OPT_CMSIS_DAPV1  ||  OPT_CMSIS_DAPV2
-    static uint8_t TxDataBuffer[PACKET_MAXSIZE];
+#ifndef NEW_DAP
+    #define BUFFER_MAXSIZE_1 MAX(_DAP_PACKET_COUNT_OPENOCD*_DAP_PACKET_SIZE_OPENOCD, _DAP_PACKET_COUNT_PROBERS*_DAP_PACKET_SIZE_PROBERS)
+    #define BUFFER_MAXSIZE_2 MAX(_DAP_PACKET_COUNT_PYOCD  *_DAP_PACKET_SIZE_PYOCD,   _DAP_PACKET_COUNT_UNKNOWN*_DAP_PACKET_SIZE_UNKNOWN)
+    #define BUFFER_MAXSIZE   MAX(BUFFER_MAXSIZE_1, BUFFER_MAXSIZE_2)
+
+    #define PACKET_MAXSIZE_1 MAX(_DAP_PACKET_SIZE_OPENOCD, _DAP_PACKET_SIZE_PROBERS)
+    #define PACKET_MAXSIZE_2 MAX(_DAP_PACKET_SIZE_PYOCD,   _DAP_PACKET_SIZE_UNKNOWN)
+    #define PACKET_MAXSIZE   MAX(PACKET_MAXSIZE_1, PACKET_MAXSIZE_2)
+
+    #if (CFG_TUD_VENDOR_RX_BUFSIZE < PACKET_MAXSIZE)
+        #error "increase CFG_TUD_VENDOR_RX_BUFSIZE"
+    #endif
+
+    #if OPT_CMSIS_DAPV1  ||  OPT_CMSIS_DAPV2
+        static uint8_t TxDataBuffer[PACKET_MAXSIZE];
+    #endif
+    #if OPT_CMSIS_DAPV2
+        static uint8_t RxDataBuffer[PACKET_MAXSIZE];
+
+        static bool swd_connected = false;
+        static uint32_t request_len;
+        static uint32_t last_request_us = 0;
+        static uint32_t rx_len = 0;
+        static daptool_t dap_tool = E_DAPTOOL_UNKNOWN;
+    #endif
 #endif
-#if OPT_CMSIS_DAPV2
-    static uint8_t RxDataBuffer[PACKET_MAXSIZE];
 
-    static bool swd_connected = false;
-    static uint32_t request_len;
-    static uint32_t last_request_us = 0;
-    static uint32_t rx_len = 0;
-    static daptool_t dap_tool = E_DAPTOOL_UNKNOWN;
+
+#ifdef NEW_DAP
+    #define DAP_INTERFACE_SUBCLASS 0x00
+    #define DAP_INTERFACE_PROTOCOL 0x00
+    #define DAP_TASK_PRIO  (tskIDLE_PRIORITY + 1)
+
+    #define WR_IDX(x) (x.wptr % _DAP_PACKET_COUNT)
+    #define RD_IDX(x) (x.rptr % _DAP_PACKET_COUNT)
+
+    #define WR_SLOT_PTR(x) (&(x.data[WR_IDX(x)][0]))
+    #define RD_SLOT_PTR(x) (&(x.data[RD_IDX(x)][0]))
+
+    typedef struct {
+        uint8_t data[_DAP_PACKET_COUNT][_DAP_PACKET_SIZE];
+        uint16_t data_len[_DAP_PACKET_COUNT];
+        volatile uint32_t wptr;
+        volatile uint32_t rptr;
+        volatile bool wasEmpty;
+        volatile bool wasFull;
+    } buffer_t;
+
+    static buffer_t USBRequestBuffer;
+    static buffer_t USBResponseBuffer;
+
+    static uint8_t itf_num;
+    static uint8_t _rhport;
+
+    static uint8_t _out_ep_addr;
+    static uint8_t _in_ep_addr;
+
+    static SemaphoreHandle_t edpt_spoon;
 #endif
 
 
 
-#define DAP_INTERFACE_SUBCLASS 0x00
-#define DAP_INTERFACE_PROTOCOL 0x00
-#define DAP_TASK_PRIO  (tskIDLE_PRIORITY + 1)
-
-#define WR_IDX(x) (x.wptr % _DAP_PACKET_COUNT_PYOCD)
-#define RD_IDX(x) (x.rptr % _DAP_PACKET_COUNT_PYOCD)
-
-#define WR_SLOT_PTR(x) (&(x.data[WR_IDX(x)][0]))
-#define RD_SLOT_PTR(x) (&(x.data[RD_IDX(x)][0]))
-
-typedef struct {
-    uint8_t data[_DAP_PACKET_COUNT_PYOCD][_DAP_PACKET_SIZE_PYOCD];
-    uint16_t data_len[_DAP_PACKET_COUNT_PYOCD];
-    volatile uint32_t wptr;
-    volatile uint32_t rptr;
-    volatile bool wasEmpty;
-    volatile bool wasFull;
-} buffer_t;
-
-static buffer_t USBRequestBuffer;
-static buffer_t USBResponseBuffer;
-
-static uint8_t itf_num;
-static uint8_t _rhport;
-
-static uint8_t _out_ep_addr;
-static uint8_t _in_ep_addr;
-
-static SemaphoreHandle_t edpt_spoon;
-
-
-
-#if OPT_CMSIS_DAPV2
+#if OPT_CMSIS_DAPV2  &&  !defined(NEW_DAP)
 
 #if TUSB_VERSION_NUMBER <= 2000  // 0.20.0
 void tud_vendor_rx_cb(uint8_t itf, uint8_t const* buffer, uint16_t bufsize)
@@ -229,7 +231,7 @@ void tud_vendor_rx_cb(uint8_t itf, uint8_t const* buffer, uint32_t bufsize)
 
 
 
-#if OPT_CMSIS_DAPV2
+#if OPT_CMSIS_DAPV2  &&  !defined(NEW_DAP)
 void dap_task(void *ptr)
 /**
  * CMSIS-DAP task.
@@ -504,7 +506,7 @@ bool tud_vendor_control_xfer_cb(uint8_t rhport, uint8_t stage, tusb_control_requ
 
 
 
-#if OPT_CMSIS_DAPV1
+#if OPT_CMSIS_DAPV1  &&  !defined(NEW_DAP)
 static bool hid_swd_connected;
 static bool hid_swd_disconnect_requested;
 static TimerHandle_t     timer_hid_disconnect = NULL;
@@ -615,6 +617,7 @@ void tud_hid_set_report_cb(uint8_t itf, uint8_t report_id, hid_report_type_t rep
 
 
 
+#if !defined(NEW_DAP)
 bool dap_is_connected(void)
 {
     bool r = false;
@@ -628,6 +631,7 @@ bool dap_is_connected(void)
 
     return r;
 }   // dap_is_connected
+#endif
 
 
 
@@ -666,7 +670,7 @@ char * dap_cmd_string[] = {
 
 bool buffer_full(buffer_t *buffer)
 {
-    return ((buffer->wptr + 1) % _DAP_PACKET_COUNT_PYOCD == buffer->rptr);
+    return ((buffer->wptr + 1) % _DAP_PACKET_COUNT == buffer->rptr);
 }   // buffer_full
 
 
@@ -739,7 +743,7 @@ uint16_t dap_edpt_open(uint8_t __unused rhport, tusb_desc_interface_t const *itf
 
     // The OUT endpoint requires a call to usbd_edpt_xfer to initialise the endpoint, giving tinyUSB a buffer to consume when a transfer occurs at the endpoint
     usbd_edpt_open(rhport, edpt_desc);
-    usbd_edpt_xfer(rhport, ep_addr, WR_SLOT_PTR(USBRequestBuffer), _DAP_PACKET_SIZE_PYOCD, false);
+    usbd_edpt_xfer(rhport, ep_addr, WR_SLOT_PTR(USBRequestBuffer), _DAP_PACKET_SIZE, false);
 
     // Initiliasing the IN endpoint
 
@@ -773,7 +777,7 @@ bool dap_edpt_xfer_cb(uint8_t __unused rhport, uint8_t ep_addr, xfer_result_t re
 
     if(ep_dir == TUSB_DIR_IN)
     {
-        if(xferred_bytes >= 0u && xferred_bytes <= _DAP_PACKET_SIZE_PYOCD)
+        if(xferred_bytes >= 0u && xferred_bytes <= _DAP_PACKET_SIZE)
         {
             xSemaphoreTake(edpt_spoon, portMAX_DELAY);
             USBResponseBuffer.rptr++;
@@ -795,7 +799,7 @@ bool dap_edpt_xfer_cb(uint8_t __unused rhport, uint8_t ep_addr, xfer_result_t re
 
     } else if(ep_dir == TUSB_DIR_OUT) {
 
-        if(xferred_bytes >= 0u && xferred_bytes <= _DAP_PACKET_SIZE_PYOCD)
+        if(xferred_bytes >= 0u && xferred_bytes <= _DAP_PACKET_SIZE)
         {
             xSemaphoreTake(edpt_spoon, portMAX_DELAY);
             // Only queue the next buffer in the out callback if the buffer is not full
@@ -803,7 +807,7 @@ bool dap_edpt_xfer_cb(uint8_t __unused rhport, uint8_t ep_addr, xfer_result_t re
             if( !buffer_full(&USBRequestBuffer))
             {
                 USBRequestBuffer.wptr++;
-                usbd_edpt_xfer(rhport, ep_addr, WR_SLOT_PTR(USBRequestBuffer), _DAP_PACKET_SIZE_PYOCD, false);
+                usbd_edpt_xfer(rhport, ep_addr, WR_SLOT_PTR(USBRequestBuffer), _DAP_PACKET_SIZE, false);
                 USBRequestBuffer.wasFull = false;
             }
             else {
@@ -837,11 +841,11 @@ void dap_thread(void *ptr)
              * until a non-QueueCommands packet is seen.
              */
             n = USBRequestBuffer.rptr;
-            while (USBRequestBuffer.data[n % _DAP_PACKET_COUNT_PYOCD][0] == ID_DAP_QueueCommands) {
+            while (USBRequestBuffer.data[n % _DAP_PACKET_COUNT][0] == ID_DAP_QueueCommands) {
                 picoprobe_info("%u %u DAP queued cmd %s len %d\n",
                                USBRequestBuffer.wptr, USBRequestBuffer.rptr,
-                               dap_cmd_string[USBRequestBuffer.data[n % _DAP_PACKET_COUNT_PYOCD][0]], USBRequestBuffer.data[n % _DAP_PACKET_COUNT_PYOCD][1]);
-                USBRequestBuffer.data[n % _DAP_PACKET_COUNT_PYOCD][0] = ID_DAP_ExecuteCommands;
+                               dap_cmd_string[USBRequestBuffer.data[n % _DAP_PACKET_COUNT][0]], USBRequestBuffer.data[n % _DAP_PACKET_COUNT][1]);
+                USBRequestBuffer.data[n % _DAP_PACKET_COUNT][0] = ID_DAP_ExecuteCommands;
                 n++;
                 while (n == USBRequestBuffer.wptr) {
                     /* Need yield in a loop here, as IN callbacks will also wake the thread */
@@ -859,7 +863,7 @@ void dap_thread(void *ptr)
             if(USBRequestBuffer.wasFull)
             {
                 USBRequestBuffer.wptr++;
-                usbd_edpt_xfer(_rhport, _out_ep_addr, WR_SLOT_PTR(USBRequestBuffer), _DAP_PACKET_SIZE_PYOCD, false);
+                usbd_edpt_xfer(_rhport, _out_ep_addr, WR_SLOT_PTR(USBRequestBuffer), _DAP_PACKET_SIZE, false);
                 USBRequestBuffer.wasFull = false;
             }
             xSemaphoreGive(edpt_spoon);
@@ -923,7 +927,7 @@ usbd_class_driver_t const *usbd_app_driver_get_cb(uint8_t *driver_count)
 
 
 
-#if OPT_CMSIS_DAPV2
+#if OPT_CMSIS_DAPV2  &&  !defined(NEW_DAP)
 static void dap_reset_tool_timeout(TimerHandle_t xTimer)
 {
     // probe-rs does not like this (because it does reconnects with other fingerprints)
@@ -943,7 +947,7 @@ void dap_server_init(uint32_t task_prio)
     /* Lowest priority thread is debug - need to shuffle buffers before we can toggle swd... */
     xTaskCreate(dap_thread, "DAP", configMINIMAL_STACK_SIZE, NULL, DAP_TASK_PRIO, &dap_taskhandle);
 
-#if OPT_CMSIS_DAPV2
+#if OPT_CMSIS_DAPV2  &&  !defined(NEW_DAP)
     dap_stream = xStreamBufferCreate(BUFFER_MAXSIZE, 1);
     if (dap_stream == NULL) {
         picoprobe_error("dap_server_init: cannot create dap_stream\n");
