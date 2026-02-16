@@ -185,8 +185,8 @@
         uint16_t data_len[_DAP_PACKET_COUNT_NEW];
         volatile uint32_t wr_idx;
         volatile uint32_t rd_idx;
-        volatile bool     wasEmpty;
         volatile bool     wasFull;
+        volatile bool     xmtRunning;
         uint16_t dmax;
     } buffer_t;
 
@@ -686,17 +686,10 @@ char * dap_cmd_string[] = {
 
 
 
-bool buffer_full(buffer_t *buffer)
+static bool buffer_full(buffer_t *buffer)
 {
     return ((buffer->wr_idx + 1) % _DAP_PACKET_COUNT_NEW == buffer->rd_idx % _DAP_PACKET_COUNT_NEW);
 }   // buffer_full
-
-
-
-bool buffer_empty(buffer_t *buffer)
-{
-    return buffer->wr_idx == buffer->rd_idx;
-}   // buffer_empty
 
 
 
@@ -736,10 +729,6 @@ uint16_t dap_edpt_open(uint8_t __unused _rhport, tusb_desc_interface_t const *it
 
     memset( &USBRequestBuffer,  0, sizeof(USBRequestBuffer));
     memset( &USBResponseBuffer, 0, sizeof(USBResponseBuffer));
-
-    // Initialize full/empty flags
-    USBResponseBuffer.wasEmpty = true;
-    USBRequestBuffer.wasEmpty  = true;
 
     uint16_t const drv_len = sizeof(tusb_desc_interface_t) + (itf_desc->bNumEndpoints * sizeof(tusb_desc_endpoint_t));
     TU_VERIFY(max_len >= drv_len, 0);
@@ -795,49 +784,53 @@ bool dap_edpt_xfer_isr_cb(uint8_t __unused rhport, uint8_t ep_addr, xfer_result_
 
 bool dap_edpt_xfer_cb(uint8_t __unused rhport, uint8_t ep_addr, xfer_result_t result, uint32_t xferred_bytes)
 {
-//    picoprobe_info("dap_edpt_xfer_cb\n");
     const uint8_t ep_dir = tu_edpt_dir(ep_addr);
+    bool r = false;
+
+    xSemaphoreTake(edpt_spoon, portMAX_DELAY);
 
     if (ep_dir == TUSB_DIR_IN)
     {
 //        printf(">\n");
         if (xferred_bytes >=  0u  && xferred_bytes <= _DAP_PACKET_SIZE_NEW)
         {
-            xSemaphoreTake(edpt_spoon, portMAX_DELAY);
+            if (xferred_bytes != USBResponseBuffer.data_len[RD_IDX(USBResponseBuffer, 0)])
+            {
+                picoprobe_error("dap_edpt_xfer_cb(): did not transmit complete response!?\n");
+            }
+
+            // mark the buffer as empty & advance to next buffer
+            USBResponseBuffer.data_len[RD_IDX(USBResponseBuffer, 0)] = 0;
             ++USBResponseBuffer.rd_idx;
-            // This checks that the buffer was not empty in DAP thread, which means the next buffer was not queued up for the in endpoint callback
-            // So, queue up the buffer at the new read index, since we expect read to catch up to write at this point.
-            // It is possible for the read index to be multiple spaces behind the write index (if the USB callbacks are lagging behind dap thread),
-            // so we account for this by only setting wasEmpty to true if the next callback will empty the buffer
-            if( !USBResponseBuffer.wasEmpty)
+
+            // start transmission of next pending response
+            if (USBResponseBuffer.data_len[RD_IDX(USBResponseBuffer, 0)] != 0)
             {
 #if TUSB_VERSION_NUMBER <= 2000
                 usbd_edpt_xfer(rhport, ep_addr, RD_SLOT_PTR(USBResponseBuffer), USBResponseBuffer.data_len[RD_IDX(USBResponseBuffer, 0)]);
 #else
                 usbd_edpt_xfer(rhport, ep_addr, RD_SLOT_PTR(USBResponseBuffer), USBResponseBuffer.data_len[RD_IDX(USBResponseBuffer, 0)], true);
 #endif
-                USBResponseBuffer.wasEmpty = (USBResponseBuffer.rd_idx + 1) == USBResponseBuffer.wr_idx;
             }
-            xSemaphoreGive(edpt_spoon);
-            //  Wake up DAP thread after processing the callback
-            xTaskNotify(dap_taskhandle, 0, eSetValueWithOverwrite);
-            return true;
+            else
+            {
+                USBResponseBuffer.xmtRunning = false;
+            }
+
+            r = true;
         }
-        return false;
     }
     else if (ep_dir == TUSB_DIR_OUT)
     {
 //        printf("<\n");
         if (xferred_bytes >= 0u  &&  xferred_bytes <= _DAP_PACKET_SIZE_NEW)
         {
-            xSemaphoreTake(edpt_spoon, portMAX_DELAY);
-
             // validate buffer for reading
             USBRequestBuffer.data_len[WR_IDX(USBRequestBuffer, 0)] = xferred_bytes;
 
             // Only queue the next buffer in the out callback if the buffer is not full
             // If full, we set the wasFull flag, which will be checked by dap thread
-            if( !buffer_full(&USBRequestBuffer))
+            if ( !buffer_full(&USBRequestBuffer))
             {
                 ++USBRequestBuffer.wr_idx;
 #if TUSB_VERSION_NUMBER <= 2000
@@ -849,7 +842,7 @@ bool dap_edpt_xfer_cb(uint8_t __unused rhport, uint8_t ep_addr, xfer_result_t re
             }
             else
             {
-                printf("!!!!!!!!!!!!!! % d %d\n", (int)USBRequestBuffer.wr_idx, (int)USBRequestBuffer.rd_idx);
+                printf("!!!!!!!! %d %d\n", (int)USBRequestBuffer.rd_idx, (int)USBRequestBuffer.wr_idx);
                 USBRequestBuffer.wasFull = true;
             }
 
@@ -863,14 +856,15 @@ bool dap_edpt_xfer_cb(uint8_t __unused rhport, uint8_t ep_addr, xfer_result_t re
                 }
             }
 
-            xSemaphoreGive(edpt_spoon);
-            //  Wake up DAP thread after processing the callback
-            xTaskNotify(dap_taskhandle, 0, eSetValueWithOverwrite);
-            return true;
+            r = true;
         }
-        return false;
     }
-    return false;
+
+    xSemaphoreGive(edpt_spoon);
+
+    //  Wake up DAP thread after processing the callback
+    xTaskNotify(dap_taskhandle, 0, eSetValueWithOverwrite);
+    return r;
 }   // dap_edpt_xfer_cb
 
 
@@ -925,8 +919,9 @@ void dap_thread(void *ptr)
 
             // If the buffer was full in the out callback, we need to queue up another buffer for the endpoint to consume, now that we know there is space in the buffer.
             xSemaphoreTake(edpt_spoon, portMAX_DELAY); // Suspend the scheduler to safely update the write index
-            if(USBRequestBuffer.wasFull)
+            if (USBRequestBuffer.wasFull)
             {
+                printf("........ %d %d\n", (int)USBRequestBuffer.rd_idx, (int)USBRequestBuffer.wr_idx);
                 ++USBRequestBuffer.wr_idx;
 #if TUSB_VERSION_NUMBER <= 2000
                 usbd_edpt_xfer(rhport, out_ep_addr, WR_SLOT_PTR(USBRequestBuffer), _DAP_PACKET_SIZE_NEW);
@@ -938,39 +933,38 @@ void dap_thread(void *ptr)
             xSemaphoreGive(edpt_spoon);
 
             resp_len = DAP_ExecuteCommand(RD_SLOT_PTR(USBRequestBuffer), WR_SLOT_PTR(USBResponseBuffer)) & 0xffff;
-            ++USBRequestBuffer.rd_idx;
-#if 0
-            picoprobe_info("%u %u DAP resp %s len %d\n",
-                           (unsigned)USBResponseBuffer.wr_idx, (unsigned)USBResponseBuffer.rd_idx,
-                           dap_cmd_string[WR_SLOT_PTR(USBResponseBuffer)[0]], resp_len);
-#endif
-
-            //  Suspend the scheduler to avoid stale values/race conditions between threads
-            xSemaphoreTake(edpt_spoon, portMAX_DELAY);
-
-            USBResponseBuffer.data_len[WR_IDX(USBResponseBuffer, 0)] = resp_len;
-
-            if (buffer_empty(&USBResponseBuffer))
+            if (resp_len == 0)
             {
-                USBResponseBuffer.wr_idx++;
-
-//                picoprobe_info("!!\n");
-#if TUSB_VERSION_NUMBER <= 2000
-                usbd_edpt_xfer(rhport, in_ep_addr, RD_SLOT_PTR(USBResponseBuffer), USBResponseBuffer.data_len[RD_IDX(USBResponseBuffer, 0)]);
-#else
-                usbd_edpt_xfer(rhport, in_ep_addr, RD_SLOT_PTR(USBResponseBuffer), USBResponseBuffer.data_len[RD_IDX(USBResponseBuffer, 0)], true);
-#endif
+                picoprobe_error("DAP_ExecuteCommand() must return a response!\n");
             }
             else
             {
+                ++USBRequestBuffer.rd_idx;
+#if 0
+                picoprobe_info("%u %u DAP resp %s len %d\n",
+                               (unsigned)USBResponseBuffer.wr_idx, (unsigned)USBResponseBuffer.rd_idx,
+                               dap_cmd_string[WR_SLOT_PTR(USBResponseBuffer)[0]], resp_len);
+#endif
+
+                //  Suspend the scheduler to avoid stale values/race conditions between threads
+                xSemaphoreTake(edpt_spoon, portMAX_DELAY);
+
+                USBResponseBuffer.data_len[WR_IDX(USBResponseBuffer, 0)] = resp_len;
                 ++USBResponseBuffer.wr_idx;
 
-//                picoprobe_info("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! something in queue %d %d\n", USBResponseBuffer.wr_idx, USBResponseBuffer.rd_idx);
+                if ( !USBResponseBuffer.xmtRunning)
+                {
+                    USBResponseBuffer.xmtRunning = true;
 
-                // The In callback needs to check this flag to know when to queue up the next buffer.
-                USBResponseBuffer.wasEmpty = false;
+#if TUSB_VERSION_NUMBER <= 2000
+                    usbd_edpt_xfer(rhport, in_ep_addr, RD_SLOT_PTR(USBResponseBuffer), USBResponseBuffer.data_len[RD_IDX(USBResponseBuffer, 0)]);
+#else
+                    usbd_edpt_xfer(rhport, in_ep_addr, RD_SLOT_PTR(USBResponseBuffer), USBResponseBuffer.data_len[RD_IDX(USBResponseBuffer, 0)], true);
+#endif
+                }
+
+                xSemaphoreGive(edpt_spoon);
             }
-            xSemaphoreGive(edpt_spoon);
         }
     }
 }   // dap_thread
