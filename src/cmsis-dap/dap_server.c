@@ -188,10 +188,10 @@
         volatile bool     rcvDelayed;
         volatile bool     xmtRunning;
         uint16_t dmax;
-    } buffer_t;
+    } queue_t;
 
-    static buffer_t USBRequestBuffer;
-    static buffer_t USBResponseBuffer;
+    static queue_t requestQueue;
+    static queue_t responseQueue;
 
     static uint8_t itf_num;             // actually not used
     static uint8_t rhport;
@@ -720,8 +720,8 @@ uint16_t dap_edpt_open(uint8_t __unused _rhport, tusb_desc_interface_t const *it
               DAP_INTERFACE_SUBCLASS == itf_desc->bInterfaceSubClass &&
               DAP_INTERFACE_PROTOCOL == itf_desc->bInterfaceProtocol, 0);
 
-    memset( &USBRequestBuffer,  0, sizeof(USBRequestBuffer));
-    memset( &USBResponseBuffer, 0, sizeof(USBResponseBuffer));
+    memset( &requestQueue,  0, sizeof(requestQueue));
+    memset( &responseQueue, 0, sizeof(responseQueue));
 
     uint16_t const drv_len = sizeof(tusb_desc_interface_t) + (itf_desc->bNumEndpoints * sizeof(tusb_desc_endpoint_t));
     TU_VERIFY(max_len >= drv_len, 0);
@@ -739,9 +739,9 @@ uint16_t dap_edpt_open(uint8_t __unused _rhport, tusb_desc_interface_t const *it
     usbd_edpt_open(rhport, edpt_desc);
 
 #if TUSB_VERSION_NUMBER <= 2000
-    usbd_edpt_xfer(rhport, out_ep_addr, WR_SLOT_PTR(USBRequestBuffer), _DAP_PACKET_SIZE_NEW);
+    usbd_edpt_xfer(rhport, out_ep_addr, WR_SLOT_PTR(requestQueue), _DAP_PACKET_SIZE_NEW);
 #else
-    usbd_edpt_xfer(rhport, out_ep_addr, WR_SLOT_PTR(USBRequestBuffer), _DAP_PACKET_SIZE_NEW, true);
+    usbd_edpt_xfer(rhport, out_ep_addr, WR_SLOT_PTR(requestQueue), _DAP_PACKET_SIZE_NEW, true);
 #endif
 
     //
@@ -787,27 +787,27 @@ bool dap_edpt_xfer_cb(uint8_t __unused rhport, uint8_t ep_addr, xfer_result_t re
 //        printf(">\n");
         if (xferred_bytes >= 0u  &&  xferred_bytes <= _DAP_PACKET_SIZE_NEW)
         {
-            if (xferred_bytes != USBResponseBuffer.data_len[RD_IDX(USBResponseBuffer, 0)])
+            if (xferred_bytes != responseQueue.data_len[RD_IDX(responseQueue, 0)])
             {
                 picoprobe_error("dap_edpt_xfer_cb(): did not transmit complete response!?\n");
             }
 
             // mark the buffer as empty & advance to next buffer
-            USBResponseBuffer.data_len[RD_IDX(USBResponseBuffer, 0)] = 0;
-            ++USBResponseBuffer.rd_idx;
+            responseQueue.data_len[RD_IDX(responseQueue, 0)] = 0;
+            ++responseQueue.rd_idx;
 
             // start transmission of next pending response
-            if (USBResponseBuffer.data_len[RD_IDX(USBResponseBuffer, 0)] != 0)
+            if (responseQueue.data_len[RD_IDX(responseQueue, 0)] != 0)
             {
 #if TUSB_VERSION_NUMBER <= 2000
-                usbd_edpt_xfer(rhport, ep_addr, RD_SLOT_PTR(USBResponseBuffer), USBResponseBuffer.data_len[RD_IDX(USBResponseBuffer, 0)]);
+                usbd_edpt_xfer(rhport, ep_addr, RD_SLOT_PTR(responseQueue), responseQueue.data_len[RD_IDX(responseQueue, 0)]);
 #else
-                usbd_edpt_xfer(rhport, ep_addr, RD_SLOT_PTR(USBResponseBuffer), USBResponseBuffer.data_len[RD_IDX(USBResponseBuffer, 0)], true);
+                usbd_edpt_xfer(rhport, ep_addr, RD_SLOT_PTR(responseQueue), responseQueue.data_len[RD_IDX(responseQueue, 0)], true);
 #endif
             }
             else
             {
-                USBResponseBuffer.xmtRunning = false;
+                responseQueue.xmtRunning = false;
             }
 
             r = true;
@@ -819,32 +819,32 @@ bool dap_edpt_xfer_cb(uint8_t __unused rhport, uint8_t ep_addr, xfer_result_t re
         if (xferred_bytes >= 0u  &&  xferred_bytes <= _DAP_PACKET_SIZE_NEW)
         {
             // validate buffer for reading
-            USBRequestBuffer.data_len[WR_IDX(USBRequestBuffer, 0)] = xferred_bytes;
+            requestQueue.data_len[WR_IDX(requestQueue, 0)] = xferred_bytes;
 
             // Only queue the next buffer in the out callback if the queue is not full
             // If full, we set the rcvDelayed flag, which will be checked by dap thread
-            if (USBRequestBuffer.data_len[WR_IDX(USBRequestBuffer, 1)] == 0)
+            if (requestQueue.data_len[WR_IDX(requestQueue, 1)] == 0)
             {
-                ++USBRequestBuffer.wr_idx;
+                ++requestQueue.wr_idx;
 #if TUSB_VERSION_NUMBER <= 2000
-                usbd_edpt_xfer(rhport, ep_addr, WR_SLOT_PTR(USBRequestBuffer), _DAP_PACKET_SIZE_NEW);
+                usbd_edpt_xfer(rhport, ep_addr, WR_SLOT_PTR(requestQueue), _DAP_PACKET_SIZE_NEW);
 #else
-                usbd_edpt_xfer(rhport, ep_addr, WR_SLOT_PTR(USBRequestBuffer), _DAP_PACKET_SIZE_NEW, true);
+                usbd_edpt_xfer(rhport, ep_addr, WR_SLOT_PTR(requestQueue), _DAP_PACKET_SIZE_NEW, true);
 #endif
-                USBRequestBuffer.rcvDelayed = false;
+                requestQueue.rcvDelayed = false;
             }
             else
             {
-                printf("!!!!!!!! %d %d\n", (int)USBRequestBuffer.rd_idx, (int)USBRequestBuffer.wr_idx);
-                USBRequestBuffer.rcvDelayed = true;
+                printf("!!!!!!!! %d %d\n", (int)requestQueue.rd_idx, (int)requestQueue.wr_idx);
+                requestQueue.rcvDelayed = true;
             }
 
             {
-                int diff = USBRequestBuffer.wr_idx - USBRequestBuffer.rd_idx;
+                int diff = requestQueue.wr_idx - requestQueue.rd_idx;
 
-                if (diff > USBRequestBuffer.dmax)
+                if (diff > requestQueue.dmax)
                 {
-                    USBRequestBuffer.dmax = diff;
+                    requestQueue.dmax = diff;
                     picoprobe_info("dap_edpt_xfer_cb, dmax request %d\n", diff);
                 }
             }
@@ -871,7 +871,7 @@ void dap_thread(void *ptr)
     {
         // Wait for usb CB wake
         xTaskNotifyWait(0, 0xFFFFFFFFu, &cmd, 1);
-        while (USBRequestBuffer.data_len[RD_IDX(USBRequestBuffer, 0)] != 0)
+        while (requestQueue.data_len[RD_IDX(requestQueue, 0)] != 0)
         {
 #if 0
             /*
@@ -880,15 +880,15 @@ void dap_thread(void *ptr)
              */
             uint32_t n;
 
-            n = USBRequestBuffer.rd_idx;
-            while (USBRequestBuffer.data[n % _DAP_PACKET_COUNT_NEW][0] == ID_DAP_QueueCommands)
+            n = requestQueue.rd_idx;
+            while (requestQueue.data[n % _DAP_PACKET_COUNT_NEW][0] == ID_DAP_QueueCommands)
             {
                 picoprobe_info("%u %u DAP queued cmd %s len %d\n",
-                               USBRequestBuffer.wr_idx, USBRequestBuffer.rd_idx,
-                               dap_cmd_string[USBRequestBuffer.data[n % _DAP_PACKET_COUNT_NEW][0]], USBRequestBuffer.data[n % _DAP_PACKET_COUNT_NEW][1]);
-                USBRequestBuffer.data[n % _DAP_PACKET_COUNT_NEW][0] = ID_DAP_ExecuteCommands;
+                        requestQueue.wr_idx, requestQueue.rd_idx,
+                               dap_cmd_string[requestQueue.data[n % _DAP_PACKET_COUNT_NEW][0]], requestQueue.data[n % _DAP_PACKET_COUNT_NEW][1]);
+                requestQueue.data[n % _DAP_PACKET_COUNT_NEW][0] = ID_DAP_ExecuteCommands;
                 n++;
-                while (n == USBRequestBuffer.wr_idx)
+                while (n == requestQueue.wr_idx)
                 {
                     /* Need yield in a loop here, as IN callbacks will also wake the thread */
                     picoprobe_info("DAP wait\n");
@@ -898,38 +898,38 @@ void dap_thread(void *ptr)
 #endif
 
             // Read a single packet from the USB buffer into the DAP Request buffer
-            if (USBRequestBuffer.data_len[RD_IDX(USBRequestBuffer, 0)] != DAP_GetCommandLength(RD_SLOT_PTR(USBRequestBuffer), USBRequestBuffer.data_len[RD_IDX(USBRequestBuffer, 0)]))
+            if (requestQueue.data_len[RD_IDX(requestQueue, 0)] != DAP_GetCommandLength(RD_SLOT_PTR(requestQueue), requestQueue.data_len[RD_IDX(requestQueue, 0)]))
             {
                 picoprobe_error("dap_thread(): malformed request\n");
             }
 #if 0
             picoprobe_info("%u %u DAP cmd %s len %d %d %d\n",
-                           (unsigned)USBRequestBuffer.wr_idx, (unsigned)USBRequestBuffer.rd_idx,
-                           dap_cmd_string[RD_SLOT_PTR(USBRequestBuffer)[0]], RD_SLOT_PTR(USBRequestBuffer)[1],
-                           (int)USBRequestBuffer.data_len[RD_IDX(USBRequestBuffer, 0)],
-                           (int)DAP_GetCommandLength(RD_SLOT_PTR(USBRequestBuffer), USBRequestBuffer.data_len[RD_IDX(USBRequestBuffer, 0)]));
+                           (unsigned)requestQueue.wr_idx, (unsigned)requestQueue.rd_idx,
+                           dap_cmd_string[RD_SLOT_PTR(requestQueue)[0]], RD_SLOT_PTR(requestQueue)[1],
+                           (int)requestQueue.data_len[RD_IDX(requestQueue, 0)],
+                           (int)DAP_GetCommandLength(RD_SLOT_PTR(requestQueue), requestQueue.data_len[RD_IDX(requestQueue, 0)]));
 #endif
 
             // execute DAP command
-            resp_len = DAP_ExecuteCommand(RD_SLOT_PTR(USBRequestBuffer), WR_SLOT_PTR(USBResponseBuffer)) & 0xffff;
+            resp_len = DAP_ExecuteCommand(RD_SLOT_PTR(requestQueue), WR_SLOT_PTR(responseQueue)) & 0xffff;
 
             xSemaphoreTake(edpt_spoon, portMAX_DELAY); // Suspend the scheduler to safely update the write index
 
             // mark the buffer as empty & advance to next buffer
-            USBRequestBuffer.data_len[RD_IDX(USBRequestBuffer, 0)] = 0;
-            ++USBRequestBuffer.rd_idx;
+            requestQueue.data_len[RD_IDX(requestQueue, 0)] = 0;
+            ++requestQueue.rd_idx;
 
             // If the buffer was full in the out callback, we need to queue up another buffer for the endpoint to consume, now that we know there is space in the buffer.
-            if (USBRequestBuffer.rcvDelayed)
+            if (requestQueue.rcvDelayed)
             {
-                printf("........ %d %d\n", (int)USBRequestBuffer.rd_idx, (int)USBRequestBuffer.wr_idx);
-                ++USBRequestBuffer.wr_idx;
+                printf("........ %d %d\n", (int)requestQueue.rd_idx, (int)requestQueue.wr_idx);
+                ++requestQueue.wr_idx;
 #if TUSB_VERSION_NUMBER <= 2000
-                usbd_edpt_xfer(rhport, out_ep_addr, WR_SLOT_PTR(USBRequestBuffer), _DAP_PACKET_SIZE_NEW);
+                usbd_edpt_xfer(rhport, out_ep_addr, WR_SLOT_PTR(requestQueue), _DAP_PACKET_SIZE_NEW);
 #else
-                usbd_edpt_xfer(rhport, out_ep_addr, WR_SLOT_PTR(USBRequestBuffer), _DAP_PACKET_SIZE_NEW, true);
+                usbd_edpt_xfer(rhport, out_ep_addr, WR_SLOT_PTR(requestQueue), _DAP_PACKET_SIZE_NEW, true);
 #endif
-                USBRequestBuffer.rcvDelayed = false;
+                requestQueue.rcvDelayed = false;
             }
             xSemaphoreGive(edpt_spoon);
 
@@ -941,24 +941,24 @@ void dap_thread(void *ptr)
             {
 #if 0
                 picoprobe_info("%u %u DAP resp %s len %d\n",
-                               (unsigned)USBResponseBuffer.wr_idx, (unsigned)USBResponseBuffer.rd_idx,
-                               dap_cmd_string[WR_SLOT_PTR(USBResponseBuffer)[0]], resp_len);
+                               (unsigned)responseQueue.wr_idx, (unsigned)responseQueue.rd_idx,
+                               dap_cmd_string[WR_SLOT_PTR(responseQueue)[0]], resp_len);
 #endif
 
                 //  Suspend the scheduler to avoid stale values/race conditions between threads
                 xSemaphoreTake(edpt_spoon, portMAX_DELAY);
 
-                USBResponseBuffer.data_len[WR_IDX(USBResponseBuffer, 0)] = resp_len;
-                ++USBResponseBuffer.wr_idx;
+                responseQueue.data_len[WR_IDX(responseQueue, 0)] = resp_len;
+                ++responseQueue.wr_idx;
 
-                if ( !USBResponseBuffer.xmtRunning)
+                if ( !responseQueue.xmtRunning)
                 {
-                    USBResponseBuffer.xmtRunning = true;
+                    responseQueue.xmtRunning = true;
 
 #if TUSB_VERSION_NUMBER <= 2000
-                    usbd_edpt_xfer(rhport, in_ep_addr, RD_SLOT_PTR(USBResponseBuffer), USBResponseBuffer.data_len[RD_IDX(USBResponseBuffer, 0)]);
+                    usbd_edpt_xfer(rhport, in_ep_addr, RD_SLOT_PTR(responseQueue), responseQueue.data_len[RD_IDX(responseQueue, 0)]);
 #else
-                    usbd_edpt_xfer(rhport, in_ep_addr, RD_SLOT_PTR(USBResponseBuffer), USBResponseBuffer.data_len[RD_IDX(USBResponseBuffer, 0)], true);
+                    usbd_edpt_xfer(rhport, in_ep_addr, RD_SLOT_PTR(responseQueue), responseQueue.data_len[RD_IDX(responseQueue, 0)], true);
 #endif
                 }
 
