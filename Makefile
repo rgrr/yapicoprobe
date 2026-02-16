@@ -252,7 +252,7 @@ debuggEE-flash:
 debuggEE-flash-openocd:
 	$(MAKE) all-debuggEE
 	# openocd does much faster flashing
-	$(OPENOCD) -s $(OPENOCD_S) -f interface/cmsis-dap.cfg -f target/$(PICO_CHIPEE).cfg                                   \
+	$(OPENOCD) -s $(OPENOCD_S) -f interface/cmsis-dap.cfg -f target/$(PICO_CHIPEE).cfg                                 \
 	           -c "adapter speed 6000; adapter serial $(DEBUGGER_SERNO)"                                               \
 	           -c "program {$(BUILDEE_DIR)/$(PROJECT).hex}  verify; exit;"
 	# "pyocd reset" required to start
@@ -332,3 +332,8 @@ cmake-create-debugger: clean-build
 	         $(CMAKE_FLAGS)                                                                                            \
 	         -DPICO_CLIB=newlib                                                                                        \
 	         -DOPT_NET= -DOPT_SIGROK=0 -DOPT_MSC=0
+
+
+.PHONY: benchmark-probe-rs
+benchmark-probe-rs:
+	probe-rs benchmark --protocol swd --address 0x20020000 --min-speed 1000 --max-speed 10000 --chip $(PICO_CHIPEE)
