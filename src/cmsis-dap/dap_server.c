@@ -185,7 +185,7 @@
         uint16_t data_len[_DAP_PACKET_COUNT_NEW];
         volatile uint32_t wr_idx;
         volatile uint32_t rd_idx;
-        volatile bool     wasFull;
+        volatile bool     rcvDelayed;
         volatile bool     xmtRunning;
         uint16_t dmax;
     } buffer_t;
@@ -686,13 +686,6 @@ char * dap_cmd_string[] = {
 
 
 
-static bool buffer_full(buffer_t *buffer)
-{
-    return ((buffer->wr_idx + 1) % _DAP_PACKET_COUNT_NEW == buffer->rd_idx % _DAP_PACKET_COUNT_NEW);
-}   // buffer_full
-
-
-
 void dap_edpt_init(void)
 {
     picoprobe_info("dap_edpt_init\n");
@@ -742,7 +735,7 @@ uint16_t dap_edpt_open(uint8_t __unused _rhport, tusb_desc_interface_t const *it
     uint8_t ep_addr = edpt_desc->bEndpointAddress;
     out_ep_addr = ep_addr;
 
-    // The OUT endpoint requires a call to usbd_edpt_xfer to initialize the endpoint, giving tinyUSB a buffer to consume when a transfer occurs at the endpoint
+    // The OUT endpoint requires a call to usbd_edpt_xfer to initialize the endpoint, giving TinyUSB a buffer to consume when a transfer occurs at the endpoint
     usbd_edpt_open(rhport, edpt_desc);
 
 #if TUSB_VERSION_NUMBER <= 2000
@@ -792,7 +785,7 @@ bool dap_edpt_xfer_cb(uint8_t __unused rhport, uint8_t ep_addr, xfer_result_t re
     if (ep_dir == TUSB_DIR_IN)
     {
 //        printf(">\n");
-        if (xferred_bytes >=  0u  && xferred_bytes <= _DAP_PACKET_SIZE_NEW)
+        if (xferred_bytes >= 0u  &&  xferred_bytes <= _DAP_PACKET_SIZE_NEW)
         {
             if (xferred_bytes != USBResponseBuffer.data_len[RD_IDX(USBResponseBuffer, 0)])
             {
@@ -828,9 +821,9 @@ bool dap_edpt_xfer_cb(uint8_t __unused rhport, uint8_t ep_addr, xfer_result_t re
             // validate buffer for reading
             USBRequestBuffer.data_len[WR_IDX(USBRequestBuffer, 0)] = xferred_bytes;
 
-            // Only queue the next buffer in the out callback if the buffer is not full
-            // If full, we set the wasFull flag, which will be checked by dap thread
-            if ( !buffer_full(&USBRequestBuffer))
+            // Only queue the next buffer in the out callback if the queue is not full
+            // If full, we set the rcvDelayed flag, which will be checked by dap thread
+            if (USBRequestBuffer.data_len[WR_IDX(USBRequestBuffer, 1)] == 0)
             {
                 ++USBRequestBuffer.wr_idx;
 #if TUSB_VERSION_NUMBER <= 2000
@@ -838,12 +831,12 @@ bool dap_edpt_xfer_cb(uint8_t __unused rhport, uint8_t ep_addr, xfer_result_t re
 #else
                 usbd_edpt_xfer(rhport, ep_addr, WR_SLOT_PTR(USBRequestBuffer), _DAP_PACKET_SIZE_NEW, true);
 #endif
-                USBRequestBuffer.wasFull = false;
+                USBRequestBuffer.rcvDelayed = false;
             }
             else
             {
                 printf("!!!!!!!! %d %d\n", (int)USBRequestBuffer.rd_idx, (int)USBRequestBuffer.wr_idx);
-                USBRequestBuffer.wasFull = true;
+                USBRequestBuffer.rcvDelayed = true;
             }
 
             {
@@ -878,7 +871,7 @@ void dap_thread(void *ptr)
     {
         // Wait for usb CB wake
         xTaskNotifyWait(0, 0xFFFFFFFFu, &cmd, 1);
-        while (USBRequestBuffer.rd_idx != USBRequestBuffer.wr_idx)
+        while (USBRequestBuffer.data_len[RD_IDX(USBRequestBuffer, 0)] != 0)
         {
 #if 0
             /*
@@ -907,7 +900,7 @@ void dap_thread(void *ptr)
             // Read a single packet from the USB buffer into the DAP Request buffer
             if (USBRequestBuffer.data_len[RD_IDX(USBRequestBuffer, 0)] != DAP_GetCommandLength(RD_SLOT_PTR(USBRequestBuffer), USBRequestBuffer.data_len[RD_IDX(USBRequestBuffer, 0)]))
             {
-                picoprobe_error("      !!!!!!!!!!!!!!!!!!!!! ERROR follows\n");
+                picoprobe_error("dap_thread(): malformed request\n");
             }
 #if 0
             picoprobe_info("%u %u DAP cmd %s len %d %d %d\n",
@@ -917,9 +910,17 @@ void dap_thread(void *ptr)
                            (int)DAP_GetCommandLength(RD_SLOT_PTR(USBRequestBuffer), USBRequestBuffer.data_len[RD_IDX(USBRequestBuffer, 0)]));
 #endif
 
-            // If the buffer was full in the out callback, we need to queue up another buffer for the endpoint to consume, now that we know there is space in the buffer.
+            // execute DAP command
+            resp_len = DAP_ExecuteCommand(RD_SLOT_PTR(USBRequestBuffer), WR_SLOT_PTR(USBResponseBuffer)) & 0xffff;
+
             xSemaphoreTake(edpt_spoon, portMAX_DELAY); // Suspend the scheduler to safely update the write index
-            if (USBRequestBuffer.wasFull)
+
+            // mark the buffer as empty & advance to next buffer
+            USBRequestBuffer.data_len[RD_IDX(USBRequestBuffer, 0)] = 0;
+            ++USBRequestBuffer.rd_idx;
+
+            // If the buffer was full in the out callback, we need to queue up another buffer for the endpoint to consume, now that we know there is space in the buffer.
+            if (USBRequestBuffer.rcvDelayed)
             {
                 printf("........ %d %d\n", (int)USBRequestBuffer.rd_idx, (int)USBRequestBuffer.wr_idx);
                 ++USBRequestBuffer.wr_idx;
@@ -928,18 +929,16 @@ void dap_thread(void *ptr)
 #else
                 usbd_edpt_xfer(rhport, out_ep_addr, WR_SLOT_PTR(USBRequestBuffer), _DAP_PACKET_SIZE_NEW, true);
 #endif
-                USBRequestBuffer.wasFull = false;
+                USBRequestBuffer.rcvDelayed = false;
             }
             xSemaphoreGive(edpt_spoon);
 
-            resp_len = DAP_ExecuteCommand(RD_SLOT_PTR(USBRequestBuffer), WR_SLOT_PTR(USBResponseBuffer)) & 0xffff;
             if (resp_len == 0)
             {
                 picoprobe_error("DAP_ExecuteCommand() must return a response!\n");
             }
             else
             {
-                ++USBRequestBuffer.rd_idx;
 #if 0
                 picoprobe_info("%u %u DAP resp %s len %d\n",
                                (unsigned)USBResponseBuffer.wr_idx, (unsigned)USBResponseBuffer.rd_idx,
@@ -990,7 +989,7 @@ usbd_class_driver_t const _dap_edpt_driver =
 
 usbd_class_driver_t const *usbd_app_driver_get_cb(uint8_t *driver_count)
 /**
- *  Add the custom driver to the tinyUSB stack
+ *  Add the custom driver to the TinyUSB stack
  */
 {
     *driver_count = 1;
