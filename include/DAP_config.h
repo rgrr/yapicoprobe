@@ -97,7 +97,7 @@ This information includes:
 /// 1024 for High-speed USB HID and 512 for High-speed USB WinUSB.
 /// ATTENTION: terrible hack to make "dap_packet_size" a variable, see DAP_PACKET_COUNT
 extern uint16_t dap_packet_size;
-#define DAP_PACKET_SIZE     ((__LINE__ < 50) ? 64 : dap_packet_size)
+#define DAP_PACKET_SIZE     ((__LINE__ < 50) ? 512 : dap_packet_size)
 
 /// Maximum Package Buffers for Command and Response data.
 /// This configuration settings is used to optimize the communication performance with the
@@ -107,7 +107,7 @@ extern uint16_t dap_packet_size;
 ///            and CMSIS-DAPv1 works only with "1" (openocd)
 ///            The __LINE__ test is required to skip the test in DAP.c successfully.
 extern uint8_t dap_packet_count;
-#define DAP_PACKET_COUNT     ((__LINE__ < 50) ? 1 : dap_packet_count)
+#define DAP_PACKET_COUNT     ((__LINE__ < 50) ? 8 : dap_packet_count)
 
 /// Indicate that UART Serial Wire Output (SWO) trace is available.
 /// This information is returned by the command \ref DAP_Info as part of <b>Capabilities</b>.
