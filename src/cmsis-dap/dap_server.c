@@ -743,7 +743,7 @@ uint16_t dap_edpt_open(uint8_t __unused rhport, tusb_desc_interface_t const *itf
 
     // The OUT endpoint requires a call to usbd_edpt_xfer to initialise the endpoint, giving tinyUSB a buffer to consume when a transfer occurs at the endpoint
     usbd_edpt_open(rhport, edpt_desc);
-    usbd_edpt_xfer(rhport, ep_addr, WR_SLOT_PTR(USBRequestBuffer), _DAP_PACKET_SIZE_NEW, false);
+    usbd_edpt_xfer(rhport, ep_addr, WR_SLOT_PTR(USBRequestBuffer), _DAP_PACKET_SIZE_NEW, true);
 
     // Initiliasing the IN endpoint
 
@@ -777,6 +777,7 @@ bool dap_edpt_xfer_cb(uint8_t __unused rhport, uint8_t ep_addr, xfer_result_t re
 
     if(ep_dir == TUSB_DIR_IN)
     {
+        printf(">\n");
         if(xferred_bytes >= 0u && xferred_bytes <= _DAP_PACKET_SIZE_NEW)
         {
             xSemaphoreTake(edpt_spoon, portMAX_DELAY);
@@ -787,7 +788,7 @@ bool dap_edpt_xfer_cb(uint8_t __unused rhport, uint8_t ep_addr, xfer_result_t re
             // so we account for this by only setting wasEmpty to true if the next callback will empty the buffer
             if( !USBResponseBuffer.wasEmpty)
             {
-                usbd_edpt_xfer(rhport, ep_addr, RD_SLOT_PTR(USBResponseBuffer), USBResponseBuffer.data_len[RD_IDX(USBResponseBuffer)], false);
+                usbd_edpt_xfer(rhport, ep_addr, RD_SLOT_PTR(USBResponseBuffer), USBResponseBuffer.data_len[RD_IDX(USBResponseBuffer)], true);
                 USBResponseBuffer.wasEmpty = (USBResponseBuffer.rptr + 1) == USBResponseBuffer.wptr;
             }
             xSemaphoreGive(edpt_spoon);
@@ -799,15 +800,19 @@ bool dap_edpt_xfer_cb(uint8_t __unused rhport, uint8_t ep_addr, xfer_result_t re
 
     } else if(ep_dir == TUSB_DIR_OUT) {
 
+        printf("<\n");
         if(xferred_bytes >= 0u && xferred_bytes <= _DAP_PACKET_SIZE_NEW)
         {
             xSemaphoreTake(edpt_spoon, portMAX_DELAY);
+
+            USBRequestBuffer.data_len[WR_IDX(USBRequestBuffer)] = xferred_bytes;
+
             // Only queue the next buffer in the out callback if the buffer is not full
             // If full, we set the wasFull flag, which will be checked by dap thread
             if( !buffer_full(&USBRequestBuffer))
             {
                 USBRequestBuffer.wptr++;
-                usbd_edpt_xfer(rhport, ep_addr, WR_SLOT_PTR(USBRequestBuffer), _DAP_PACKET_SIZE_NEW, false);
+                usbd_edpt_xfer(rhport, ep_addr, WR_SLOT_PTR(USBRequestBuffer), _DAP_PACKET_SIZE_NEW, true);
                 USBRequestBuffer.wasFull = false;
             }
             else {
@@ -827,7 +832,6 @@ bool dap_edpt_xfer_cb(uint8_t __unused rhport, uint8_t ep_addr, xfer_result_t re
 
 void dap_thread(void *ptr)
 {
-    uint32_t n;
     uint32_t cmd;
     uint16_t resp_len;
     do
@@ -836,10 +840,13 @@ void dap_thread(void *ptr)
         xTaskNotifyWait(0, 0xFFFFFFFFu, &cmd, 1);
         while(USBRequestBuffer.rptr != USBRequestBuffer.wptr)
         {
+#if 0
             /*
              * Atomic command support - buffer QueueCommands, but don't process them
              * until a non-QueueCommands packet is seen.
              */
+            uint32_t n;
+
             n = USBRequestBuffer.rptr;
             while (USBRequestBuffer.data[n % _DAP_PACKET_COUNT_NEW][0] == ID_DAP_QueueCommands) {
                 picoprobe_info("%u %u DAP queued cmd %s len %d\n",
@@ -853,17 +860,20 @@ void dap_thread(void *ptr)
                     vTaskSuspend(dap_taskhandle);
                 }
             }
+#endif
+
             // Read a single packet from the USB buffer into the DAP Request buffer
-            picoprobe_info("%u %u DAP cmd %s len %d\n",
+            picoprobe_info("%u %u DAP cmd %s len %d %d\n",
                            USBRequestBuffer.wptr, USBRequestBuffer.rptr,
-                           dap_cmd_string[RD_SLOT_PTR(USBRequestBuffer)[0]], RD_SLOT_PTR(USBRequestBuffer)[1]);
+                           dap_cmd_string[RD_SLOT_PTR(USBRequestBuffer)[0]], RD_SLOT_PTR(USBRequestBuffer)[1],
+                           USBRequestBuffer.data_len[RD_IDX(USBRequestBuffer)]);
 
             // If the buffer was full in the out callback, we need to queue up another buffer for the endpoint to consume, now that we know there is space in the buffer.
             xSemaphoreTake(edpt_spoon, portMAX_DELAY); // Suspend the scheduler to safely update the write index
             if(USBRequestBuffer.wasFull)
             {
                 USBRequestBuffer.wptr++;
-                usbd_edpt_xfer(_rhport, _out_ep_addr, WR_SLOT_PTR(USBRequestBuffer), _DAP_PACKET_SIZE_NEW, false);
+                usbd_edpt_xfer(_rhport, _out_ep_addr, WR_SLOT_PTR(USBRequestBuffer), _DAP_PACKET_SIZE_NEW, true);
                 USBRequestBuffer.wasFull = false;
             }
             xSemaphoreGive(edpt_spoon);
@@ -882,7 +892,7 @@ void dap_thread(void *ptr)
             {
                 USBResponseBuffer.wptr++;
 
-                usbd_edpt_xfer(_rhport, _in_ep_addr, RD_SLOT_PTR(USBResponseBuffer), USBResponseBuffer.data_len[RD_IDX(USBResponseBuffer)], false);
+                usbd_edpt_xfer(_rhport, _in_ep_addr, RD_SLOT_PTR(USBResponseBuffer), USBResponseBuffer.data_len[RD_IDX(USBResponseBuffer)], true);
             } else {
 
                 USBResponseBuffer.wptr++;
@@ -946,6 +956,7 @@ void dap_server_init(uint32_t task_prio)
 
     /* Lowest priority thread is debug - need to shuffle buffers before we can toggle swd... */
     xTaskCreate(dap_thread, "DAP", configMINIMAL_STACK_SIZE, NULL, DAP_TASK_PRIO, &dap_taskhandle);
+    vTaskCoreAffinitySet(dap_taskhandle, (1 << 1));
 
 #if OPT_CMSIS_DAPV2  &&  !defined(NEW_DAP)
     dap_stream = xStreamBufferCreate(BUFFER_MAXSIZE, 1);
