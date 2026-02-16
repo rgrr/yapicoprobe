@@ -49,15 +49,6 @@
 #include "sw_lock.h"
 #include "minIni/minIni.h"
 
-
-#if OPT_CMSIS_DAPV2
-    static TaskHandle_t           dap_taskhandle = NULL;
-    static EventGroupHandle_t     dap_events;
-    static StreamBufferHandle_t   dap_stream;
-    static TimerHandle_t          timer_clear_dap_tool;
-#endif
-
-
 /*
  * The following is part of a hack to make DAP_PACKET_COUNT a variable.
  * CMSIS-DAPv2 has better performance with 2 packets while
@@ -120,6 +111,11 @@
 #endif
 
 #ifndef NEW_DAP
+    static TaskHandle_t           dap_taskhandle = NULL;
+    static EventGroupHandle_t     dap_events;
+    static StreamBufferHandle_t   dap_stream;
+    static TimerHandle_t          timer_clear_dap_tool;
+
     uint8_t  dap_packet_count = _DAP_PACKET_COUNT_UNKNOWN;
     uint16_t dap_packet_size  = _DAP_PACKET_SIZE_UNKNOWN;
 #else
@@ -184,6 +180,7 @@
     static uint8_t _out_ep_addr;
     static uint8_t _in_ep_addr;
 
+    static TaskHandle_t      dap_taskhandle = NULL;
     static SemaphoreHandle_t edpt_spoon;
 #endif
 
@@ -863,10 +860,15 @@ void dap_thread(void *ptr)
 #endif
 
             // Read a single packet from the USB buffer into the DAP Request buffer
-            picoprobe_info("%u %u DAP cmd %s len %d %d\n",
-                           USBRequestBuffer.wptr, USBRequestBuffer.rptr,
+            if (USBRequestBuffer.data_len[RD_IDX(USBRequestBuffer)] != DAP_GetCommandLength(RD_SLOT_PTR(USBRequestBuffer), USBRequestBuffer.data_len[RD_IDX(USBRequestBuffer)]))
+            {
+                picoprobe_error("      !!!!!!!!!!!!!!!!!!!!! ERROR follows\n");
+            }
+            picoprobe_info("%u %u DAP cmd %s len %d %d %d\n",
+                           (unsigned)USBRequestBuffer.wptr, (unsigned)USBRequestBuffer.rptr,
                            dap_cmd_string[RD_SLOT_PTR(USBRequestBuffer)[0]], RD_SLOT_PTR(USBRequestBuffer)[1],
-                           USBRequestBuffer.data_len[RD_IDX(USBRequestBuffer)]);
+                           (int)USBRequestBuffer.data_len[RD_IDX(USBRequestBuffer)],
+                           (int)DAP_GetCommandLength(RD_SLOT_PTR(USBRequestBuffer), USBRequestBuffer.data_len[RD_IDX(USBRequestBuffer)]));
 
             // If the buffer was full in the out callback, we need to queue up another buffer for the endpoint to consume, now that we know there is space in the buffer.
             xSemaphoreTake(edpt_spoon, portMAX_DELAY); // Suspend the scheduler to safely update the write index
@@ -881,7 +883,7 @@ void dap_thread(void *ptr)
             resp_len = DAP_ExecuteCommand(RD_SLOT_PTR(USBRequestBuffer), WR_SLOT_PTR(USBResponseBuffer)) & 0xffff;
             USBRequestBuffer.rptr++;
             picoprobe_info("%u %u DAP resp %s len %d\n",
-                           USBResponseBuffer.wptr, USBResponseBuffer.rptr,
+                           (unsigned)USBResponseBuffer.wptr, (unsigned)USBResponseBuffer.rptr,
                            dap_cmd_string[WR_SLOT_PTR(USBResponseBuffer)[0]], resp_len);
 
             USBResponseBuffer.data_len[WR_IDX(USBResponseBuffer)] = resp_len;
