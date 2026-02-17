@@ -95,7 +95,8 @@
  *       - does no disconnect on end of debug sessions (small piece of code is missing, see
  *         https://github.com/pyocd/pyOCD/issues/1531 and
  *         https://github.com/pyocd/pyOCD/pull/1869 (still open)
- *       - this means that the tool detection does not work in this case
+ *       - this means that the tool detection does not work in this case.  After introducing a timeout in
+ *         finger printing, only the connect message is missing
  *       - BUT does not access the SW if debugging is halted and seems to restore DP state
  *       - "pyocd list" does only DAP_Info, no connect/disconnect -> not simple to recover from this tool detection
  *     - openocd

@@ -35,6 +35,10 @@
 
 #include <stdio.h>
 #include <string.h>
+
+#include "FreeRTOS.h"
+#include "task.h"
+
 #include "DAP_config.h"
 #include "DAP.h"
 
@@ -410,8 +414,9 @@ uint32_t DAP_GetCommandLength(const uint8_t *request, uint32_t request_len)
 
 daptool_t DAP_FingerprintTool(const uint8_t *request, uint32_t request_len)
 {
-    static uint32_t sample_no;
-    static daptool_t probed_tool;
+    static uint32_t   sample_no;
+    static daptool_t  probed_tool;
+    static TickType_t last_t;
 
     if (request == NULL  ||  request_len == 0  ||  request[0] == ID_DAP_Disconnect) {
         sample_no = 0;
@@ -419,6 +424,21 @@ daptool_t DAP_FingerprintTool(const uint8_t *request, uint32_t request_len)
         return probed_tool;
     }
     // post: request != NULL  &&  request_len != 0  &&  request[0] != ID_DAP_Disconnect
+
+    //
+    if (request[0] == ID_DAP_Info)
+    {
+        TickType_t now_t;
+
+        now_t = xTaskGetTickCount();
+        if (now_t - last_t > pdMS_TO_TICKS(100))
+        {
+            // timeout
+            sample_no = 0;
+            probed_tool = E_DAPTOOL_UNKNOWN;
+        }
+        last_t = now_t;
+    }
 
     if (request[0] != ID_DAP_Info  ||  probed_tool != E_DAPTOOL_UNKNOWN) {
         // return stored tool
