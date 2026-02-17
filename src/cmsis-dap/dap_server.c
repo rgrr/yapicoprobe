@@ -201,9 +201,11 @@
 
     #define MOD_PACKET_COUNT(x)     (((x) + _DAP_PACKET_COUNT_NEW) % _DAP_PACKET_COUNT_NEW)
 
-    #define WR_SLOT_PTR(x) (&(x.data[x.wr_idx][0]))
-    #define RD_SLOT_PTR(x) (&(x.data[x.rd_idx][0]))
-
+    #define WR_SLOT_PTR(x)      (&(x.data[x.wr_idx][0]))
+    #define RD_SLOT_PTR(x)      (&(x.data[x.rd_idx][0]))
+    #define WR_SLOT_LEN(x)      (x.data_len[x.wr_idx])
+    #define RD_SLOT_LEN(x)      (x.data_len[x.rd_idx])
+    #define WR_NEXT_SLOT_LEN(x) (x.data_len[MOD_PACKET_COUNT(x.wr_idx + 1)])
     typedef struct {
         uint8_t  data[_DAP_PACKET_COUNT_NEW][_DAP_PACKET_SIZE_NEW];
         uint16_t data_len[_DAP_PACKET_COUNT_NEW];
@@ -874,22 +876,22 @@ bool dap_edpt_xfer_cb(uint8_t __unused rhport, uint8_t ep_addr, xfer_result_t re
 //        printf(">\n");
         if (xferred_bytes >= 0u  &&  xferred_bytes <= _DAP_PACKET_SIZE_NEW)
         {
-            if (xferred_bytes != responseQueue.data_len[responseQueue.rd_idx])
+            if (xferred_bytes != RD_SLOT_LEN(responseQueue))
             {
                 picoprobe_error("dap_edpt_xfer_cb(): did not transmit complete response!?\n");
             }
 
             // mark the buffer as empty & advance to next buffer
-            responseQueue.data_len[responseQueue.rd_idx] = 0;
+            RD_SLOT_LEN(responseQueue) = 0;
             responseQueue.rd_idx = MOD_PACKET_COUNT(responseQueue.rd_idx + 1);
 
             // start transmission of next pending response
-            if (responseQueue.data_len[responseQueue.rd_idx] != 0)
+            if (RD_SLOT_LEN(responseQueue) != 0)
             {
 #if TUSB_VERSION_NUMBER <= 2000
-                usbd_edpt_xfer(rhport, ep_addr, RD_SLOT_PTR(responseQueue), responseQueue.data_len[responseQueue.rd_idx]);
+                usbd_edpt_xfer(rhport, ep_addr, RD_SLOT_PTR(responseQueue), RD_SLOT_LEN(responseQueue));
 #else
-                usbd_edpt_xfer(rhport, ep_addr, RD_SLOT_PTR(responseQueue), responseQueue.data_len[responseQueue.rd_idx], true);
+                usbd_edpt_xfer(rhport, ep_addr, RD_SLOT_PTR(responseQueue), RD_SLOT_LEN(responseQueue), true);
 #endif
             }
             else
@@ -906,7 +908,7 @@ bool dap_edpt_xfer_cb(uint8_t __unused rhport, uint8_t ep_addr, xfer_result_t re
         if (xferred_bytes >= 0u  &&  xferred_bytes <= _DAP_PACKET_SIZE_NEW)
         {
             // validate buffer for reading
-            requestQueue.data_len[requestQueue.wr_idx] = xferred_bytes;
+            WR_SLOT_LEN(requestQueue) = xferred_bytes;
 
 #if _DAP_PACKET_SIZE_NEW != 64
             if (xferred_bytes == DAP_GetCommandLength(RD_SLOT_PTR(requestQueue), xferred_bytes) + 1)
@@ -914,13 +916,13 @@ bool dap_edpt_xfer_cb(uint8_t __unused rhport, uint8_t ep_addr, xfer_result_t re
                 // this is a special pyocd (<= 0.42.0) hack (and of course openocd does not like it)
                 // see https://github.com/pyocd/pyOCD/issues/1871
                 picoprobe_error("dap_edpt_xfer_cb: zero packet received.  This is from pyocd <= 0.42.0.  Please update.\n");
-                --requestQueue.data_len[requestQueue.wr_idx];
+                --WR_SLOT_LEN(requestQueue);
             }
 #endif
 
             // Only queue the next buffer in the out callback if the queue is not full
             // If full, we set the rcvStartDelayed flag, which will be checked by dap thread
-            if (requestQueue.data_len[MOD_PACKET_COUNT(requestQueue.wr_idx + 1)] == 0)
+            if (WR_NEXT_SLOT_LEN(requestQueue) == 0)
             {
                 requestQueue.wr_idx = MOD_PACKET_COUNT(requestQueue.wr_idx + 1);
 #if TUSB_VERSION_NUMBER <= 2000
@@ -979,12 +981,12 @@ void dap_thread(void *ptr)
         dap_packet_size  = _DAP_PACKET_SIZE_NEW;
 #endif
 
-        while (requestQueue.data_len[requestQueue.rd_idx] != 0)
+        while (RD_SLOT_LEN(requestQueue) != 0)
         {
             //
             // Check next DAP request
             //
-            if (requestQueue.data_len[requestQueue.rd_idx] != DAP_GetCommandLength(RD_SLOT_PTR(requestQueue), requestQueue.data_len[requestQueue.rd_idx]))
+            if (RD_SLOT_LEN(requestQueue) != DAP_GetCommandLength(RD_SLOT_PTR(requestQueue), RD_SLOT_LEN(requestQueue)))
             {
                 picoprobe_error("dap_thread(): malformed request (probe may crash)\n");
             }
@@ -992,20 +994,20 @@ void dap_thread(void *ptr)
             picoprobe_info("%u %u DAP cmd %s len %d %d\n",
                            (unsigned)requestQueue.wr_idx, (unsigned)requestQueue.rd_idx,
                            dap_cmd_string[RD_SLOT_PTR(requestQueue)[0]],
-                           (int)requestQueue.data_len[requestQueue.rd_idx],
-                           (int)DAP_GetCommandLength(RD_SLOT_PTR(requestQueue), requestQueue.data_len[requestQueue.rd_idx]));
+                           (int)RD_SLOT_LEN(requestQueue),
+                           (int)DAP_GetCommandLength(RD_SLOT_PTR(requestQueue), RD_SLOT_LEN(requestQueue)));
 #endif
 
             //
             // execute DAP request
             //
-            HandleDapConnectDisconnect(RD_SLOT_PTR(requestQueue), requestQueue.data_len[requestQueue.rd_idx]);
+            HandleDapConnectDisconnect(RD_SLOT_PTR(requestQueue), RD_SLOT_LEN(requestQueue));
             resp_len = DAP_ExecuteCommand(RD_SLOT_PTR(requestQueue), WR_SLOT_PTR(responseQueue)) & 0xffff;
 
             xSemaphoreTake(edpt_spoon, portMAX_DELAY);
 
             // mark the request buffer as empty & advance to next buffer
-            requestQueue.data_len[requestQueue.rd_idx] = 0;
+            RD_SLOT_LEN(requestQueue) = 0;
             requestQueue.rd_idx = MOD_PACKET_COUNT(requestQueue.rd_idx + 1);
 
             // If the queue was full in the out callback, we need to queue up another buffer for the endpoint to consume, now that we know there is space in the buffer.
@@ -1039,7 +1041,7 @@ void dap_thread(void *ptr)
                 //  Suspend the scheduler to avoid stale values/race conditions between threads
                 xSemaphoreTake(edpt_spoon, portMAX_DELAY);
 
-                responseQueue.data_len[responseQueue.wr_idx] = resp_len;
+                WR_SLOT_LEN(responseQueue) = resp_len;
                 responseQueue.wr_idx = MOD_PACKET_COUNT(responseQueue.wr_idx + 1);
 
                 if ( !responseQueue.xmtRunning)
@@ -1047,9 +1049,9 @@ void dap_thread(void *ptr)
                     responseQueue.xmtRunning = true;
 
 #if TUSB_VERSION_NUMBER <= 2000
-                    usbd_edpt_xfer(rhport, in_ep_addr, RD_SLOT_PTR(responseQueue), responseQueue.data_len[responseQueue.rd_idx]);
+                    usbd_edpt_xfer(rhport, in_ep_addr, RD_SLOT_PTR(responseQueue), RD_SLOT_LEN(responseQueue));
 #else
-                    usbd_edpt_xfer(rhport, in_ep_addr, RD_SLOT_PTR(responseQueue), responseQueue.data_len[responseQueue.rd_idx], true);
+                    usbd_edpt_xfer(rhport, in_ep_addr, RD_SLOT_PTR(responseQueue), RD_SLOT_LEN(responseQueue), true);
 #endif
                 }
 
