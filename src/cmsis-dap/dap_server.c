@@ -124,7 +124,7 @@
     #define _DAP_PACKET_COUNT_NEW       16
     #define _DAP_PACKET_SIZE_NEW        64
 
-//    #define DAP_DEBUG                   1
+    #define DAP_DEBUG                   1
 
     #if (_DAP_PACKET_COUNT_NEW & (_DAP_PACKET_COUNT_NEW - 1)) != 0
         // no more restrictions here
@@ -215,6 +215,40 @@
     static SemaphoreHandle_t edpt_spoon;
 
     static bool swd_connected;
+
+#if DAP_DEBUG
+    static const char * dap_cmd_string[] = {
+        [ID_DAP_Info               ] = "DAP_Info",
+        [ID_DAP_HostStatus         ] = "DAP_HostStatus",
+        [ID_DAP_Connect            ] = "DAP_Connect",
+        [ID_DAP_Disconnect         ] = "DAP_Disconnect",
+        [ID_DAP_TransferConfigure  ] = "DAP_TransferConfigure",
+        [ID_DAP_Transfer           ] = "DAP_Transfer",
+        [ID_DAP_TransferBlock      ] = "DAP_TransferBlock",
+        [ID_DAP_TransferAbort      ] = "DAP_TransferAbort",
+        [ID_DAP_WriteABORT         ] = "DAP_WriteABORT",
+        [ID_DAP_Delay              ] = "DAP_Delay",
+        [ID_DAP_ResetTarget        ] = "DAP_ResetTarget",
+        [ID_DAP_SWJ_Pins           ] = "DAP_SWJ_Pins",
+        [ID_DAP_SWJ_Clock          ] = "DAP_SWJ_Clock",
+        [ID_DAP_SWJ_Sequence       ] = "DAP_SWJ_Sequence",
+        [ID_DAP_SWD_Configure      ] = "DAP_SWD_Configure",
+        [ID_DAP_SWD_Sequence       ] = "DAP_SWD_Sequence",
+        [ID_DAP_JTAG_Sequence      ] = "DAP_JTAG_Sequence",
+        [ID_DAP_JTAG_Configure     ] = "DAP_JTAG_Configure",
+        [ID_DAP_JTAG_IDCODE        ] = "DAP_JTAG_IDCODE",
+        [ID_DAP_SWO_Transport      ] = "DAP_SWO_Transport",
+        [ID_DAP_SWO_Mode           ] = "DAP_SWO_Mode",
+        [ID_DAP_SWO_Baudrate       ] = "DAP_SWO_Baudrate",
+        [ID_DAP_SWO_Control        ] = "DAP_SWO_Control",
+        [ID_DAP_SWO_Status         ] = "DAP_SWO_Status",
+        [ID_DAP_SWO_ExtendedStatus ] = "DAP_SWO_ExtendedStatus",
+        [ID_DAP_SWO_Data           ] = "DAP_SWO_Data",
+        [ID_DAP_QueueCommands      ] = "DAP_QueueCommands",
+        [ID_DAP_ExecuteCommands    ] = "DAP_ExecuteCommands",
+    };
+#endif
+
 #endif
 
 #if defined(NEW_DAP)  &&  OPT_CMSIS_DAPV1
@@ -668,41 +702,6 @@ bool dap_is_connected(void)
 
 
 #ifdef NEW_DAP
-
-#if DAP_DEBUG
-    static char * dap_cmd_string[] = {
-        [ID_DAP_Info               ] = "DAP_Info",
-        [ID_DAP_HostStatus         ] = "DAP_HostStatus",
-        [ID_DAP_Connect            ] = "DAP_Connect",
-        [ID_DAP_Disconnect         ] = "DAP_Disconnect",
-        [ID_DAP_TransferConfigure  ] = "DAP_TransferConfigure",
-        [ID_DAP_Transfer           ] = "DAP_Transfer",
-        [ID_DAP_TransferBlock      ] = "DAP_TransferBlock",
-        [ID_DAP_TransferAbort      ] = "DAP_TransferAbort",
-        [ID_DAP_WriteABORT         ] = "DAP_WriteABORT",
-        [ID_DAP_Delay              ] = "DAP_Delay",
-        [ID_DAP_ResetTarget        ] = "DAP_ResetTarget",
-        [ID_DAP_SWJ_Pins           ] = "DAP_SWJ_Pins",
-        [ID_DAP_SWJ_Clock          ] = "DAP_SWJ_Clock",
-        [ID_DAP_SWJ_Sequence       ] = "DAP_SWJ_Sequence",
-        [ID_DAP_SWD_Configure      ] = "DAP_SWD_Configure",
-        [ID_DAP_SWD_Sequence       ] = "DAP_SWD_Sequence",
-        [ID_DAP_JTAG_Sequence      ] = "DAP_JTAG_Sequence",
-        [ID_DAP_JTAG_Configure     ] = "DAP_JTAG_Configure",
-        [ID_DAP_JTAG_IDCODE        ] = "DAP_JTAG_IDCODE",
-        [ID_DAP_SWO_Transport      ] = "DAP_SWO_Transport",
-        [ID_DAP_SWO_Mode           ] = "DAP_SWO_Mode",
-        [ID_DAP_SWO_Baudrate       ] = "DAP_SWO_Baudrate",
-        [ID_DAP_SWO_Control        ] = "DAP_SWO_Control",
-        [ID_DAP_SWO_Status         ] = "DAP_SWO_Status",
-        [ID_DAP_SWO_ExtendedStatus ] = "DAP_SWO_ExtendedStatus",
-        [ID_DAP_SWO_Data           ] = "DAP_SWO_Data",
-        [ID_DAP_QueueCommands      ] = "DAP_QueueCommands",
-        [ID_DAP_ExecuteCommands    ] = "DAP_ExecuteCommands",
-    };
-#endif
-
-
 
 static void HandleDapConnectDisconnect(const uint8_t *cmd)
 /**
