@@ -95,7 +95,9 @@
  *       - does no disconnect on end of debug sessions (small piece of code is missing, see
  *         https://github.com/pyocd/pyOCD/issues/1531 and
  *         https://github.com/pyocd/pyOCD/pull/1869 (still open)
+ *       - this means that the tool detection does not work in this case
  *       - BUT does not access the SW if debugging is halted and seems to restore DP state
+ *       - "pyocd list" does only DAP_Info, no connect/disconnect -> not simple to recover from this tool detection
  *     - openocd
  *       - only small pauses if debugging is halted
  *       - DP is not completely restore
@@ -227,6 +229,7 @@
     static SemaphoreHandle_t edpt_spoon;
 
     static bool swd_connected;
+    static daptool_t dap_tool = E_DAPTOOL_UNKNOWN;
 
 #if DAP_DEBUG
     static const char * dap_cmd_string[] = {
@@ -715,19 +718,23 @@ bool dap_is_connected(void)
 
 #ifdef NEW_DAP
 
-static void HandleDapConnectDisconnect(const uint8_t *cmd)
+static void HandleDapConnectDisconnect(const uint8_t *cmd, uint32_t cmdlen)
 /**
  * Handle DAP connect & disconnect.
  * - get and release sw_lock accordingly
  * - set LED state
  */
 {
+    dap_tool = DAP_FingerprintTool(cmd, cmdlen);
+
     if ( !swd_connected) {
         if ( !DAP_OfflineCommand(cmd)) {
             if (sw_lock(E_SWLOCK_DAPV2)) {
                 swd_connected = true;
-                picoprobe_info("=================================== DAPv2 connect, buffer: %dx%dbytes\n",
-                               dap_packet_count, dap_packet_size);
+                picoprobe_info("=================================== DAPv2 connect target, host %s, buffer: %dx%dbytes\n",
+                        (dap_tool == E_DAPTOOL_OPENOCD) ? "OpenOCD"  :
+                        (dap_tool == E_DAPTOOL_PYOCD)   ? "pyOCD"    :
+                        (dap_tool == E_DAPTOOL_PROBERS) ? "probe-rs" : "UNKNOWN", dap_packet_count, dap_packet_size);
 //                picoprobe_debug("------------ %d (command leading to online)\n", RxDataBuffer[0]);
                 led_state(LS_DAPV2_CONNECTED);
             }
@@ -781,7 +788,7 @@ bool dap_edpt_deinit(void)
 void dap_edpt_reset(uint8_t __unused rhport)
 {
 #if DAP_DEBUG
-    picoprobe_info("dap_edpt_reset\n");
+    picoprobe_info("dap_edpt_reset %d\n", rhport);
 #endif
     itf_num = 0;
 }   // dap_edpt_reset
@@ -790,13 +797,13 @@ void dap_edpt_reset(uint8_t __unused rhport)
 
 uint16_t dap_edpt_open(uint8_t __unused _rhport, tusb_desc_interface_t const *itf_desc, uint16_t max_len)
 {
-#if DAP_DEBUG
-    picoprobe_info("dap_edpt_open\n");
-#endif
-
     TU_VERIFY(TUSB_CLASS_VENDOR_SPECIFIC == itf_desc->bInterfaceClass &&
               DAP_INTERFACE_SUBCLASS == itf_desc->bInterfaceSubClass &&
               DAP_INTERFACE_PROTOCOL == itf_desc->bInterfaceProtocol, 0);
+
+#if DAP_DEBUG
+    picoprobe_info("dap_edpt_open\n");
+#endif
 
     memset( &requestQueue,  0, sizeof(requestQueue));
     memset( &responseQueue, 0, sizeof(responseQueue));
@@ -992,7 +999,7 @@ void dap_thread(void *ptr)
             //
             // execute DAP request
             //
-            HandleDapConnectDisconnect(RD_SLOT_PTR(requestQueue));
+            HandleDapConnectDisconnect(RD_SLOT_PTR(requestQueue), requestQueue.data_len[requestQueue.rd_idx]);
             resp_len = DAP_ExecuteCommand(RD_SLOT_PTR(requestQueue), WR_SLOT_PTR(responseQueue)) & 0xffff;
 
             xSemaphoreTake(edpt_spoon, portMAX_DELAY);

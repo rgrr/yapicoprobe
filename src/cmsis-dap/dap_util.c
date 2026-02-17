@@ -413,11 +413,13 @@ daptool_t DAP_FingerprintTool(const uint8_t *request, uint32_t request_len)
     static uint32_t sample_no;
     static daptool_t probed_tool;
 
-    if (request == NULL  ||  request_len == 0) {
+    if (request == NULL  ||  request_len == 0  ||  request[0] == ID_DAP_Disconnect) {
         sample_no = 0;
         probed_tool = E_DAPTOOL_UNKNOWN;
         return probed_tool;
     }
+    // post: request != NULL  &&  request_len != 0  &&  request[0] != ID_DAP_Disconnect
+
     if (request[0] != ID_DAP_Info  ||  probed_tool != E_DAPTOOL_UNKNOWN) {
         // return stored tool
         return probed_tool;
@@ -427,13 +429,13 @@ daptool_t DAP_FingerprintTool(const uint8_t *request, uint32_t request_len)
     if (request_len >= 2  &&  sample_no == 0) {
         ++sample_no;
 
-        if (request[0] == ID_DAP_Info  &&  request[1] == DAP_ID_PACKET_COUNT) {        // TODO hmmm... this does not work
+        if (request[0] == ID_DAP_Info  &&  request[1] == DAP_ID_PACKET_COUNT) {
             probed_tool = E_DAPTOOL_PYOCD;
         }
         else if (request[0] == ID_DAP_Info  &&  request[1] == DAP_ID_CAPABILITIES) {
             probed_tool = E_DAPTOOL_OPENOCD;
         }
-        else if (request[0] == ID_DAP_Info  &&  request[1] == DAP_ID_PACKET_SIZE) {    // TODO hmmm... this does not work
+        else if (request[0] == ID_DAP_Info  &&  request[1] == DAP_ID_PACKET_SIZE) {
             probed_tool = E_DAPTOOL_PROBERS;
         }
     }
