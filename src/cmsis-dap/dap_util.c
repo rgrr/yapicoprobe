@@ -524,5 +524,6 @@ bool DAP_OfflineCommand(const uint8_t *request_data)
     return      *request_data == ID_DAP_Info                // must be offline, "pyocd list" uses this
             ||  *request_data == ID_DAP_HostStatus          // must be offline, openocd/probe-rs uses this after disconnect
             ||  *request_data == ID_DAP_Disconnect          // this MUST be offline, otherwise openocd does not work
-            ||  *request_data == ID_DAP_SWJ_Clock;          // this is not true, but unfortunately pyOCD does it
+//            ||  *request_data == ID_DAP_SWJ_Clock           // this is not true, but unfortunately pyOCD does it
+            ;
 }   // DAP_OfflineCommand
