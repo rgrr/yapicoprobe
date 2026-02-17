@@ -396,27 +396,18 @@ uint32_t DAP_GetCommandLength(const uint8_t *request, uint32_t request_len)
  * pyocd   sends  0/254, 0/4, 0/255
  * openocd sends  0/240, 0/4, 0/3
  *
- * Actual idea is, to switch to a faster mode if the tool is detected reliably.
+ * Actual idea is, to switch features if the tool is detected reliably, e.g. RTT while debugging.
  *
  * If any parameter is "0", the logic is reset.
- *
- * \note
- *    - fingerprinting must not contain \a DAP_ID_PACKET_COUNT or \a DAP_ID_PACKET_SIZE in \a sample_no < 3
- *    - sequence is different for pyocd, if CMSIS > 5.7.0 is used in the probe.
- *
- * TODO
- *    One can foul this algorithm by doing "pyocd list" with a successive openocd which makes the probe
- *    believe that it is still pyocd.  Must introduce some kind of timeout
  */
 
-// simple but correct version concerning DAP_ID_PACKET_COUNT / DAP_ID_PACKET_SIZE
+// very simple version, luckily the tools start with different queries
 #define DO_IT_SIMPLE
 
 daptool_t DAP_FingerprintTool(const uint8_t *request, uint32_t request_len)
 {
     static uint32_t   sample_no;
     static daptool_t  probed_tool;
-    static TickType_t last_t;
 
     if (request == NULL  ||  request_len == 0  ||  request[0] == ID_DAP_Disconnect) {
         sample_no = 0;
@@ -425,13 +416,16 @@ daptool_t DAP_FingerprintTool(const uint8_t *request, uint32_t request_len)
     }
     // post: request != NULL  &&  request_len != 0  &&  request[0] != ID_DAP_Disconnect
 
+    // TODO this mechanism does not work with RTT while debugging
+#if 0
     //
     if (request[0] == ID_DAP_Info)
     {
+        static TickType_t last_t;
         TickType_t now_t;
 
         now_t = xTaskGetTickCount();
-        if (now_t - last_t > pdMS_TO_TICKS(100))
+        if (now_t - last_t > pdMS_TO_TICKS(500))
         {
             // timeout
             sample_no = 0;
@@ -439,6 +433,7 @@ daptool_t DAP_FingerprintTool(const uint8_t *request, uint32_t request_len)
         }
         last_t = now_t;
     }
+#endif
 
     if (request[0] != ID_DAP_Info  ||  probed_tool != E_DAPTOOL_UNKNOWN) {
         // return stored tool
