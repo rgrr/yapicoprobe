@@ -136,7 +136,7 @@
     #define _DAP_PACKET_COUNT_NEW       16
     #define _DAP_PACKET_SIZE_NEW        64
 
-    #define DAP_DEBUG                   1
+//    #define DAP_DEBUG                   1
 
     #if (_DAP_PACKET_COUNT_NEW & (_DAP_PACKET_COUNT_NEW - 1)) != 0
         // no more restrictions here
@@ -981,7 +981,7 @@ void dap_thread(void *ptr)
             {
                 picoprobe_error("dap_thread(): malformed request (probe may crash)\n");
             }
-#if 1  &&  DAP_DEBUG
+#if 0  &&  DAP_DEBUG
             picoprobe_info("%u %u DAP cmd %s len %d %d\n",
                            (unsigned)requestQueue.wr_idx, (unsigned)requestQueue.rd_idx,
                            dap_cmd_string[RD_SLOT_PTR(requestQueue)[0]],
