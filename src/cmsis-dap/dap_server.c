@@ -847,6 +847,16 @@ bool dap_edpt_xfer_cb(uint8_t __unused rhport, uint8_t ep_addr, xfer_result_t re
             // validate buffer for reading
             requestQueue.data_len[requestQueue.wr_idx] = xferred_bytes;
 
+#if _DAP_PACKET_SIZE_NEW != 64
+            if (xferred_bytes == DAP_GetCommandLength(RD_SLOT_PTR(requestQueue), xferred_bytes) + 1)
+            {
+                // this is a special pyocd (<= 0.42.0) hack (and of course openocd does not like it)
+                // see https://github.com/pyocd/pyOCD/issues/1871
+                picoprobe_error("dap_edpt_xfer_cb: zero packet received.  This is from pyocd <= 0.42.0.  Please update.\n");
+                --requestQueue.data_len[requestQueue.wr_idx];
+            }
+#endif
+
             // Only queue the next buffer in the out callback if the queue is not full
             // If full, we set the rcvDelayed flag, which will be checked by dap thread
             if (requestQueue.data_len[MOD_PACKET_COUNT(requestQueue.wr_idx + 1)] == 0)
@@ -932,9 +942,9 @@ void dap_thread(void *ptr)
             // Read a single packet from the USB buffer into the DAP Request buffer
             if (requestQueue.data_len[requestQueue.rd_idx] != DAP_GetCommandLength(RD_SLOT_PTR(requestQueue), requestQueue.data_len[requestQueue.rd_idx]))
             {
-                picoprobe_error("dap_thread(): malformed request\n");
+                picoprobe_error("dap_thread(): malformed request (probe may crash)\n");
             }
-#if 1  &&  DAP_DEBUG
+#if 0  &&  DAP_DEBUG
             picoprobe_info("%u %u DAP cmd %s len %d %d\n",
                            (unsigned)requestQueue.wr_idx, (unsigned)requestQueue.rd_idx,
                            dap_cmd_string[RD_SLOT_PTR(requestQueue)[0]],
@@ -1020,7 +1030,7 @@ void dap_thread(void *ptr)
             }
             else
             {
-#if 1  &&  DAP_DEBUG
+#if 0  &&  DAP_DEBUG
                 picoprobe_info("%u %u DAP resp %s len %d\n",
                                (unsigned)responseQueue.wr_idx, (unsigned)responseQueue.rd_idx,
                                dap_cmd_string[WR_SLOT_PTR(responseQueue)[0]], resp_len);
