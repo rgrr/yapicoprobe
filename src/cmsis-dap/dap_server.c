@@ -90,6 +90,18 @@
  *       - I doubt that pyocd benefits from DAP_PACKET_COUNT > 2, even ==2 is questionable
  *       - does not use multi buffers for debugging
  *
+ * 2026-02-17  Problem areas
+ *     - pyocd
+ *       - does no disconnect on end of debug sessions (small piece of code is missing, see
+ *         https://github.com/pyocd/pyOCD/issues/1531 and
+ *         https://github.com/pyocd/pyOCD/pull/1869 (still open)
+ *       - BUT does not access the SW if debugging is halted and seems to restore DP state
+ *     - openocd
+ *       - only small pauses if debugging is halted
+ *       - DP is not completely restore
+ *     - probe-rs
+ *       - very slow
+ *       - no good integration into eclipse
  */
 
 // new implementation has been stolen from the original picoprobe
@@ -195,7 +207,7 @@
         uint16_t data_len[_DAP_PACKET_COUNT_NEW];
         volatile uint32_t wr_idx;
         volatile uint32_t rd_idx;
-        volatile bool     rcvDelayed;
+        volatile bool     rcvStartDelayed;
         volatile bool     xmtRunning;
 #if DAP_DEBUG
         uint16_t dmax;
@@ -900,7 +912,7 @@ bool dap_edpt_xfer_cb(uint8_t __unused rhport, uint8_t ep_addr, xfer_result_t re
 #endif
 
             // Only queue the next buffer in the out callback if the queue is not full
-            // If full, we set the rcvDelayed flag, which will be checked by dap thread
+            // If full, we set the rcvStartDelayed flag, which will be checked by dap thread
             if (requestQueue.data_len[MOD_PACKET_COUNT(requestQueue.wr_idx + 1)] == 0)
             {
                 requestQueue.wr_idx = MOD_PACKET_COUNT(requestQueue.wr_idx + 1);
@@ -909,14 +921,14 @@ bool dap_edpt_xfer_cb(uint8_t __unused rhport, uint8_t ep_addr, xfer_result_t re
 #else
                 usbd_edpt_xfer(rhport, ep_addr, WR_SLOT_PTR(requestQueue), _DAP_PACKET_SIZE_NEW, true);
 #endif
-                requestQueue.rcvDelayed = false;
+                requestQueue.rcvStartDelayed = false;
             }
             else
             {
 #if DAP_DEBUG
                 printf("!!!!!!!! %d %d\n", (int)requestQueue.rd_idx, (int)requestQueue.wr_idx);
 #endif
-                requestQueue.rcvDelayed = true;
+                requestQueue.rcvStartDelayed = true;
             }
 
 #if DAP_DEBUG
@@ -951,42 +963,25 @@ void dap_thread(void *ptr)
 
     for (;;)
     {
-        // Wait for usb CB wake
+        // Wait for wakeup from dap_edpt_xfer_cb
         xTaskNotifyWait(0, 0xFFFFFFFFu, &cmd, 1);
-        while (requestQueue.data_len[requestQueue.rd_idx] != 0)
-        {
-#if 0
-            // is this really used by any tooling?
 
-            /*
-             * Atomic command support - buffer QueueCommands, but don't process them
-             * until a non-QueueCommands packet is seen.
-             */
-            uint32_t n;
-
-            n = requestQueue.rd_idx;
-            while (requestQueue.data[n % _DAP_PACKET_COUNT_NEW][0] == ID_DAP_QueueCommands)
-            {
-                picoprobe_info("%u %u DAP queued cmd %s len %d\n",
-                        requestQueue.wr_idx, requestQueue.rd_idx,
-                               dap_cmd_string[requestQueue.data[n % _DAP_PACKET_COUNT_NEW][0]], requestQueue.data[n % _DAP_PACKET_COUNT_NEW][1]);
-                requestQueue.data[n % _DAP_PACKET_COUNT_NEW][0] = ID_DAP_ExecuteCommands;
-                n++;
-                while (n == requestQueue.wr_idx)
-                {
-                    /* Need yield in a loop here, as IN callbacks will also wake the thread */
-                    picoprobe_info("DAP wait\n");
-                    vTaskSuspend(dap_taskhandle);
-                }
-            }
+#if OPT_CMSIS_DAPV1
+        // packet parameters must be restored in this case
+        dap_packet_count = _DAP_PACKET_COUNT_NEW;
+        dap_packet_size  = _DAP_PACKET_SIZE_NEW;
 #endif
 
-            // Read a single packet from the USB buffer into the DAP Request buffer
+        while (requestQueue.data_len[requestQueue.rd_idx] != 0)
+        {
+            //
+            // Check next DAP request
+            //
             if (requestQueue.data_len[requestQueue.rd_idx] != DAP_GetCommandLength(RD_SLOT_PTR(requestQueue), requestQueue.data_len[requestQueue.rd_idx]))
             {
                 picoprobe_error("dap_thread(): malformed request (probe may crash)\n");
             }
-#if 0  &&  DAP_DEBUG
+#if 1  &&  DAP_DEBUG
             picoprobe_info("%u %u DAP cmd %s len %d %d\n",
                            (unsigned)requestQueue.wr_idx, (unsigned)requestQueue.rd_idx,
                            dap_cmd_string[RD_SLOT_PTR(requestQueue)[0]],
@@ -994,18 +989,20 @@ void dap_thread(void *ptr)
                            (int)DAP_GetCommandLength(RD_SLOT_PTR(requestQueue), requestQueue.data_len[requestQueue.rd_idx]));
 #endif
 
-            // execute DAP command
+            //
+            // execute DAP request
+            //
             HandleDapConnectDisconnect(RD_SLOT_PTR(requestQueue));
             resp_len = DAP_ExecuteCommand(RD_SLOT_PTR(requestQueue), WR_SLOT_PTR(responseQueue)) & 0xffff;
 
-            xSemaphoreTake(edpt_spoon, portMAX_DELAY); // Suspend the scheduler to safely update the write index
+            xSemaphoreTake(edpt_spoon, portMAX_DELAY);
 
-            // mark the buffer as empty & advance to next buffer
+            // mark the request buffer as empty & advance to next buffer
             requestQueue.data_len[requestQueue.rd_idx] = 0;
             requestQueue.rd_idx = MOD_PACKET_COUNT(requestQueue.rd_idx + 1);
 
-            // If the buffer was full in the out callback, we need to queue up another buffer for the endpoint to consume, now that we know there is space in the buffer.
-            if (requestQueue.rcvDelayed)
+            // If the queue was full in the out callback, we need to queue up another buffer for the endpoint to consume, now that we know there is space in the buffer.
+            if (requestQueue.rcvStartDelayed)
             {
 #if DAP_DEBUG
                 printf("........ %d %d\n", (int)requestQueue.rd_idx, (int)requestQueue.wr_idx);
@@ -1016,13 +1013,13 @@ void dap_thread(void *ptr)
 #else
                 usbd_edpt_xfer(rhport, out_ep_addr, WR_SLOT_PTR(requestQueue), _DAP_PACKET_SIZE_NEW, true);
 #endif
-                requestQueue.rcvDelayed = false;
+                requestQueue.rcvStartDelayed = false;
             }
             xSemaphoreGive(edpt_spoon);
 
             if (resp_len == 0)
             {
-                picoprobe_error("DAP_ExecuteCommand() must return a response!\n");
+                picoprobe_error("DAP_ExecuteCommand() must return a response (probe may crash)\n");
             }
             else
             {
