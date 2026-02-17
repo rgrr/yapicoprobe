@@ -669,36 +669,79 @@ bool dap_is_connected(void)
 
 #ifdef NEW_DAP
 
-char * dap_cmd_string[] = {
-    [ID_DAP_Info               ] = "DAP_Info",
-    [ID_DAP_HostStatus         ] = "DAP_HostStatus",
-    [ID_DAP_Connect            ] = "DAP_Connect",
-    [ID_DAP_Disconnect         ] = "DAP_Disconnect",
-    [ID_DAP_TransferConfigure  ] = "DAP_TransferConfigure",
-    [ID_DAP_Transfer           ] = "DAP_Transfer",
-    [ID_DAP_TransferBlock      ] = "DAP_TransferBlock",
-    [ID_DAP_TransferAbort      ] = "DAP_TransferAbort",
-    [ID_DAP_WriteABORT         ] = "DAP_WriteABORT",
-    [ID_DAP_Delay              ] = "DAP_Delay",
-    [ID_DAP_ResetTarget        ] = "DAP_ResetTarget",
-    [ID_DAP_SWJ_Pins           ] = "DAP_SWJ_Pins",
-    [ID_DAP_SWJ_Clock          ] = "DAP_SWJ_Clock",
-    [ID_DAP_SWJ_Sequence       ] = "DAP_SWJ_Sequence",
-    [ID_DAP_SWD_Configure      ] = "DAP_SWD_Configure",
-    [ID_DAP_SWD_Sequence       ] = "DAP_SWD_Sequence",
-    [ID_DAP_JTAG_Sequence      ] = "DAP_JTAG_Sequence",
-    [ID_DAP_JTAG_Configure     ] = "DAP_JTAG_Configure",
-    [ID_DAP_JTAG_IDCODE        ] = "DAP_JTAG_IDCODE",
-    [ID_DAP_SWO_Transport      ] = "DAP_SWO_Transport",
-    [ID_DAP_SWO_Mode           ] = "DAP_SWO_Mode",
-    [ID_DAP_SWO_Baudrate       ] = "DAP_SWO_Baudrate",
-    [ID_DAP_SWO_Control        ] = "DAP_SWO_Control",
-    [ID_DAP_SWO_Status         ] = "DAP_SWO_Status",
-    [ID_DAP_SWO_ExtendedStatus ] = "DAP_SWO_ExtendedStatus",
-    [ID_DAP_SWO_Data           ] = "DAP_SWO_Data",
-    [ID_DAP_QueueCommands      ] = "DAP_QueueCommands",
-    [ID_DAP_ExecuteCommands    ] = "DAP_ExecuteCommands",
-};
+#if DAP_DEBUG
+    static char * dap_cmd_string[] = {
+        [ID_DAP_Info               ] = "DAP_Info",
+        [ID_DAP_HostStatus         ] = "DAP_HostStatus",
+        [ID_DAP_Connect            ] = "DAP_Connect",
+        [ID_DAP_Disconnect         ] = "DAP_Disconnect",
+        [ID_DAP_TransferConfigure  ] = "DAP_TransferConfigure",
+        [ID_DAP_Transfer           ] = "DAP_Transfer",
+        [ID_DAP_TransferBlock      ] = "DAP_TransferBlock",
+        [ID_DAP_TransferAbort      ] = "DAP_TransferAbort",
+        [ID_DAP_WriteABORT         ] = "DAP_WriteABORT",
+        [ID_DAP_Delay              ] = "DAP_Delay",
+        [ID_DAP_ResetTarget        ] = "DAP_ResetTarget",
+        [ID_DAP_SWJ_Pins           ] = "DAP_SWJ_Pins",
+        [ID_DAP_SWJ_Clock          ] = "DAP_SWJ_Clock",
+        [ID_DAP_SWJ_Sequence       ] = "DAP_SWJ_Sequence",
+        [ID_DAP_SWD_Configure      ] = "DAP_SWD_Configure",
+        [ID_DAP_SWD_Sequence       ] = "DAP_SWD_Sequence",
+        [ID_DAP_JTAG_Sequence      ] = "DAP_JTAG_Sequence",
+        [ID_DAP_JTAG_Configure     ] = "DAP_JTAG_Configure",
+        [ID_DAP_JTAG_IDCODE        ] = "DAP_JTAG_IDCODE",
+        [ID_DAP_SWO_Transport      ] = "DAP_SWO_Transport",
+        [ID_DAP_SWO_Mode           ] = "DAP_SWO_Mode",
+        [ID_DAP_SWO_Baudrate       ] = "DAP_SWO_Baudrate",
+        [ID_DAP_SWO_Control        ] = "DAP_SWO_Control",
+        [ID_DAP_SWO_Status         ] = "DAP_SWO_Status",
+        [ID_DAP_SWO_ExtendedStatus ] = "DAP_SWO_ExtendedStatus",
+        [ID_DAP_SWO_Data           ] = "DAP_SWO_Data",
+        [ID_DAP_QueueCommands      ] = "DAP_QueueCommands",
+        [ID_DAP_ExecuteCommands    ] = "DAP_ExecuteCommands",
+    };
+#endif
+
+
+
+static void HandleDapConnectDisconnect(const uint8_t *cmd)
+/**
+ * Handle DAP connect & disconnect.
+ * - get and release sw_lock accordingly
+ * - set LED state
+ */
+{
+    if ( !swd_connected) {
+        if ( !DAP_OfflineCommand(cmd)) {
+            if (sw_lock(E_SWLOCK_DAPV2)) {
+                swd_connected = true;
+                picoprobe_info("=================================== DAPv2 connect, buffer: %dx%dbytes\n",
+                               dap_packet_count, dap_packet_size);
+//                picoprobe_debug("------------ %d (command leading to online)\n", RxDataBuffer[0]);
+                led_state(LS_DAPV2_CONNECTED);
+            }
+
+            // there was an obscure case with probe-rs which did not get the lock on "probe-rs info"
+            // this seems to be no longer the case, but this is kept as a reminder that there exists some
+            // code in ancient branches to handle the situation
+        }
+        else {
+            // ID_DAP_Info must/can be done without a lock
+#if DAP_DEBUG
+            picoprobe_info("-----------__ %s (execute offline)\n", dap_cmd_string[RD_SLOT_PTR(requestQueue)[0]]);
+#endif
+        }
+    }
+    else {
+        // connected:
+        if (*cmd == ID_DAP_Disconnect) {
+            swd_connected = false;
+            picoprobe_info("=================================== DAPv2 disconnect target\n");
+            led_state(LS_DAPV2_DISCONNECTED);
+            sw_unlock(E_SWLOCK_DAPV2);
+        }
+    }
+}   // HandleDapConnectDisconnect
 
 
 
@@ -952,54 +995,8 @@ void dap_thread(void *ptr)
                            (int)DAP_GetCommandLength(RD_SLOT_PTR(requestQueue), requestQueue.data_len[requestQueue.rd_idx]));
 #endif
 
-            //
-            // initiate SWD connect / disconnect
-            //
-            if ( !swd_connected) {
-                if ( !DAP_OfflineCommand(RD_SLOT_PTR(requestQueue))) {
-                    if (sw_lock(E_SWLOCK_DAPV2)) {
-                        swd_connected = true;
-                        picoprobe_info("=================================== DAPv2 connect, buffer: %dx%dbytes\n",
-                                       dap_packet_count, dap_packet_size);
-//                        picoprobe_debug("------------ %d (command leading to online)\n", RxDataBuffer[0]);
-                        led_state(LS_DAPV2_CONNECTED);
-                    }
-#if 0
-                    else {
-                        // TODO very obscure... did not get lock!
-                        // happens with "probe-rs info", see https://github.com/rgrr/yapicoprobe/issues/162
-                        // if we do not execute the command here, then the whole probe stucks (forever)
-                        uint32_t resp_len;
-
-                        picoprobe_debug("------------ %d (command leading to this)\n", RxDataBuffer[0]);
-                        picoprobe_error("sw_lock(%d): did not get lock\n", E_SWLOCK_DAPV2);
-                        resp_len = DAP_ExecuteCommand(RxDataBuffer, TxDataBuffer);
-                        tud_vendor_write(TxDataBuffer, resp_len & 0xffff);
-                        tud_vendor_flush();
-                    }
-#endif
-                }
-                else {
-                    // ID_DAP_Info must/can be done without a lock
-#if DAP_DEBUG
-                    picoprobe_info("-----------__ %s (execute offline)\n", dap_cmd_string[RD_SLOT_PTR(requestQueue)[0]]);
-#endif
-                }
-            }
-            else {
-                // connected:
-                if (RD_SLOT_PTR(requestQueue)[0] == ID_DAP_Disconnect) {
-                    swd_connected = false;
-                    picoprobe_info("=================================== DAPv2 disconnect target\n");
-                    led_state(LS_DAPV2_DISCONNECTED);
-                    sw_unlock(E_SWLOCK_DAPV2);
-
-                    // after disconnect wait some time before clearing dap_tool, required for probe-rs which does short disconnect/connect sequences
-//                    xTimerReset(timer_clear_dap_tool, 100);
-                }
-            }
-
             // execute DAP command
+            HandleDapConnectDisconnect(RD_SLOT_PTR(requestQueue));
             resp_len = DAP_ExecuteCommand(RD_SLOT_PTR(requestQueue), WR_SLOT_PTR(responseQueue)) & 0xffff;
 
             xSemaphoreTake(edpt_spoon, portMAX_DELAY); // Suspend the scheduler to safely update the write index
