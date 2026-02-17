@@ -101,7 +101,8 @@
  *       - "pyocd list" does only DAP_Info, no connect/disconnect -> not simple to recover from this tool detection
  *     - openocd
  *       - only small pauses if debugging is halted
- *       - DP is not completely restore
+ *       - DP is not completely restored
+ *       - at the end of flashing openocd disconnect and reconnects with a different sequence -> pyocd falsely detected
  *     - probe-rs
  *       - very slow
  *       - no good integration into eclipse
@@ -970,16 +971,40 @@ void dap_thread(void *ptr)
 {
     uint32_t cmd;
     uint16_t resp_len;
+    BaseType_t r_wait;
 
     for (;;)
     {
         // Wait for wakeup from dap_edpt_xfer_cb
-        xTaskNotifyWait(0, 0xFFFFFFFFu, &cmd, 1);
+        r_wait = xTaskNotifyWait(0, 0xFFFFFFFFu, &cmd, pdMS_TO_TICKS(8));
 
 #if OPT_CMSIS_DAPV1
         // packet parameters must be restored in this case
         dap_packet_count = _DAP_PACKET_COUNT_NEW;
         dap_packet_size  = _DAP_PACKET_SIZE_NEW;
+#endif
+
+#if OPT_RTT_WHILE_DEBUGGING  // EXPERIMENTAL FEATURE
+        if (r_wait != pdPASS  &&  dap_tool == E_DAPTOOL_PYOCD)
+        {
+            // do it just for pyOCD
+            if (swd_connected)
+            {
+//                printf("rtt\n");
+                //
+                // try to receive RTT data while debugging if there is no DAP command pending
+                // read more in rtt_io_thread()
+                //
+                sw_unlock(E_SWLOCK_DAPV2);
+
+                do {
+                    r_wait = xTaskNotifyWait(0, 0xFFFFFFFFu, &cmd, pdMS_TO_TICKS(100));
+                } while (r_wait != pdPASS);
+
+                sw_lock(E_SWLOCK_DAPV2);
+//                printf("rtt off\n");
+            }
+        }
 #endif
 
         while (RD_SLOT_LEN(requestQueue) != 0)
