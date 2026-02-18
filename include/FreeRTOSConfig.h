@@ -97,7 +97,7 @@
 
     #warning "configGENERATE_RUN_TIME_STATS is set"
     #define portCONFIGURE_TIMER_FOR_RUN_TIME_STATS()        do {} while( 0 )
-    //#define portALT_GET_RUN_TIME_COUNTER_VALUE( dest )      ( dest = *((uint32_t *)(TF_TIMER_BASE + TF_TIMER_TIMERAWL_OFFSET)) )
+    #define portALT_GET_RUN_TIME_COUNTER_VALUE( dest )      ( dest = xTickCount )
     #define portGET_RUN_TIME_COUNTER_VALUE()                (*((uint32_t *)(TF_TIMER_BASE + TF_TIMER_TIMERAWL_OFFSET)))
 
     #undef configUSE_TRACE_FACILITY
@@ -123,8 +123,12 @@
 
 #define configKERNEL_PROVIDED_STATIC_MEMORY     1
 
+/******************************************************************************************
+ * It seems that the probe runs better with a single core. No clue what the problem is.
+ ******************************************************************************************/
+
 /* SMP port only */
-#define configNUMBER_OF_CORES                   2
+#define configNUMBER_OF_CORES                   1
 #define configTICK_CORE                         1
 #define configRUN_MULTIPLE_PRIORITIES           1
 #if configNUMBER_OF_CORES != 1
