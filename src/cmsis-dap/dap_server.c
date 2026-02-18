@@ -858,11 +858,13 @@ bool dap_edpt_control_xfer_cb(uint8_t __unused rhport, uint8_t stage, tusb_contr
 
 
 
+#if TUSB_VERSION_NUMBER > 2000  // 0.20.0
 bool dap_edpt_xfer_isr_cb(uint8_t __unused rhport, uint8_t ep_addr, xfer_result_t result, uint32_t xferred_bytes)
 {
 //    picoprobe_info("dap_edpt_xfer_isr_cb !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n");
     return false;
 }   // dap_edpt_xfer_isr_cb
+#endif
 
 
 
@@ -1097,7 +1099,9 @@ usbd_class_driver_t const _dap_edpt_driver =
         .open            = dap_edpt_open,
         .control_xfer_cb = dap_edpt_control_xfer_cb,
         .xfer_cb         = dap_edpt_xfer_cb,
+#if TUSB_VERSION_NUMBER > 2000  // 0.20.0
         .xfer_isr        = dap_edpt_xfer_isr_cb,
+#endif
         .sof             = NULL,
 #if CFG_TUSB_DEBUG >= 2
         .name            = "DAP ENDPOINT"
