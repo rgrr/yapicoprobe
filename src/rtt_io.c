@@ -94,12 +94,14 @@ static EXT_SEGGER_RTT_CB_HEADER rtt_cb_header = {0};
 static bool                     rtt_console_running = false;
 static bool                     ok_console_from_target = false;
 static bool                     ok_console_to_target = false;
+static volatile bool            rtt_cb_redetect = false;
 
 static TaskHandle_t             task_rtt_console = NULL;
 static TaskHandle_t             task_rtt_from_target_thread = NULL;
 static StreamBufferHandle_t     stream_rtt_console_to_target;                  // small stream for host->probe->target console communication
 static EventGroupHandle_t       events;
 static TimerHandle_t            timer_rtt_dap_interleave;                      // minimum time do_rtt_io() should be active if DAP connected
+static TimerHandle_t            timer_rtt_redetect;
 
 #if INCLUDE_SYSVIEW
     #define RTT_CHANNEL_SYSVIEW 1
@@ -515,7 +517,8 @@ static void do_rtt_io(uint32_t rtt_cb)
     rtt_console_running = true;
     probe_rtt_cb = true;
     ok = true;
-    while (ok) { //  &&  !sw_unlock_requested()) {
+    rtt_cb_redetect = false;
+    while (ok  &&  !rtt_cb_redetect) { //  &&  !sw_unlock_requested()) {
         if (ok  &&  probe_rtt_cb) {
             //
             // check RTT control block and also all RTT channels
@@ -714,8 +717,8 @@ void rtt_io_thread(void *ptr)
  * --> no RTT while DAP
  */
 {
-    static uint32_t rtt_cb = 0;
-    static bool rtt_cb_ok = false;
+    uint32_t rtt_cb = 0;
+    bool rtt_cb_ok = false;
     bool target_online = false;
 
     for (;;) {
@@ -874,6 +877,25 @@ void rtt_sysview_send_byte(uint8_t ch)
 
 
 
+static void rtt_cb_console_redetect(TimerHandle_t xTimer)
+{
+    // TODO implement
+    printf("yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy\n");
+//    rtt_cb_active = 0;
+//    rtt_cb_redetect = true;
+}   // rtt_cb_console_redetect
+
+
+
+void rtt_console_redetect(void)
+{
+    xTimerReset(timer_rtt_redetect, 100);
+//    rtt_cb_active = 0;
+//    rtt_cb_redetect = true;
+}   // rtt_console_redetect
+
+
+
 void rtt_console_init(uint32_t task_prio)
 {
     picoprobe_debug("rtt_console_init()\n");
@@ -892,7 +914,8 @@ void rtt_console_init(uint32_t task_prio)
     }
 #endif
 
-    timer_rtt_dap_interleave = xTimerCreate("RTT/DAP interleave timeout", pdMS_TO_TICKS(8), pdFALSE, NULL, rtt_cb_verify_timeout);
+    timer_rtt_dap_interleave = xTimerCreate("RTT/DAP interleave timeout", pdMS_TO_TICKS(8),   pdFALSE, NULL, rtt_cb_verify_timeout);
+    timer_rtt_redetect       = xTimerCreate("RTT/redetect",               pdMS_TO_TICKS(550), pdFALSE, NULL, rtt_cb_console_redetect);
 
     xTaskCreate(rtt_io_thread, "RTT-IO", configMINIMAL_STACK_SIZE, NULL, task_prio, &task_rtt_console);
     if (task_rtt_console == NULL)
