@@ -76,7 +76,7 @@ static void swd_from_dormant(void)
  * does not work), where it cannot be recovered from.
  */
 {
-//    printf("---swd_from_dormant()\n");
+    printf("---swd_from_dormant()\n");
 
     SWJ_SEQ( 51, {0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x07});
     SWJ_SEQ( 31, {0xba, 0xbb, 0xbb, 0x33});
@@ -196,7 +196,7 @@ static bool dp_core_select(uint8_t _core)
     }
 
     CHECK_OK_BOOL(swd_read_dp(DP_IDCODE, &rv));
-//    printf("--2  id(%u)=0x%08lx\n", _core, rv);   // 0x0bc12477 is the RP2040
+    printf("--2  id(%u)=0x%08lx\n", _core, rv);   // 0x0bc12477 is the RP2040
 
     core = _core;
     return true;
@@ -307,7 +307,7 @@ static bool rp2040_swd_set_target_state(uint8_t core, target_state_t state)
     uint32_t val;
     int8_t ap_retries = 2;
 
-//    printf("+++++++++++++++ rp2040_swd_set_target_state(%d, %d)\n", core, state);
+    printf("+++++++++++++++ rp2040_swd_set_target_state(%d, %d)\n", core, state);
 
 //    dp_core_select(core);
 
@@ -317,16 +317,6 @@ static bool rp2040_swd_set_target_state(uint8_t core, target_state_t state)
     }
 
     switch (state) {
-#if 0
-        case RESET_HOLD:
-            if ( !rp2040_swd_init_debug(core)) {
-                return false;
-            }
-
-            swd_set_target_reset(1);
-            break;
-#endif
-
         case RESET_RUN:
             // TODO what should be done here actually?
             if ( !rp2040_swd_init_debug(core)) {
@@ -424,37 +414,6 @@ static bool rp2040_swd_set_target_state(uint8_t core, target_state_t state)
             }
             break;
 
-#if 0
-        case NO_DEBUG:
-            dp_core_select(core);
-            if ( !swd_write_word(DBG_HCSR, DBGKEY)) {
-                return false;
-            }
-            break;
-
-        case DEBUG:
-            dp_core_select(core);
-            if ( !swd_clear_errors()) {
-                return false;
-            }
-
-            // Ensure CTRL/STAT register selected in DPBANKSEL
-            if ( !swd_write_dp(DP_SELECT, 0)) {
-                return false;
-            }
-
-            // Power up
-            if ( !swd_write_dp(DP_CTRL_STAT, CSYSPWRUPREQ | CDBGPWRUPREQ)) {
-                return false;
-            }
-
-            // Enable debug
-            if ( !swd_write_word(DBG_HCSR, DBGKEY | C_DEBUGEN)) {
-                return false;
-            }
-            break;
-#endif
-
         case HALT:
             if ( !rp2040_swd_init_debug(core)) {
                 return false;
@@ -472,19 +431,6 @@ static bool rp2040_swd_set_target_state(uint8_t core, target_state_t state)
                 }
             } while ((val & S_HALT) == 0);
             break;
-
-#if 0
-        case RUN:
-            dp_core_select(core);
-            if ( !swd_write_word(DBG_HCSR, DBGKEY)) {
-                return false;
-            }
-            break;
-
-        case POST_FLASH_RESET:
-            // This state should be handled in target_reset.c, nothing needs to be done here.
-            break;
-#endif
 
         case ATTACH:
             // attach without doing anything else
@@ -535,18 +481,9 @@ static uint8_t rp2040_target_set_state(target_state_t state)
 {
     uint8_t r = false;
 
-//    printf("----- rp2040_target_set_state(%d)\n", state);
+    printf("----- rp2040_target_set_state(%d)\n", state);
 
     switch (state) {
-#if 0
-        case RESET_HOLD:
-            // Hold target in reset
-            // pre: -
-            r = rp2040_swd_set_target_state(0, RESET_HOLD)  &&  rp2040_swd_set_target_state(1, RESET_HOLD);
-            // post: both cores are in HW reset
-            break;
-#endif
-
         case RESET_PROGRAM:
             // Reset target and setup for flash programming
             // pre: -
@@ -562,50 +499,12 @@ static uint8_t rp2040_target_set_state(target_state_t state)
             // post: both cores are running
             break;
 
-#if 0
-        case NO_DEBUG:
-            // Disable debug on running target
-            // pre: !swd_off()  &&  core0 selected
-            r = rp2040_swd_set_target_state(1, NO_DEBUG)  &&  rp2040_swd_set_target_state(0, NO_DEBUG);
-            // post: core0 in NO_DEBUG
-            break;
-
-        case DEBUG:
-            // Enable debug on running target
-            // pre: !swd_off()  &&  core0 selected
-            r = rp2040_swd_set_target_state(1, DEBUG)  &&  rp2040_swd_set_target_state(0, DEBUG);
-            // post: core0 in DEBUG
-            break;
-#endif
-
         case HALT:
             // Halt the target without resetting it
             // pre: -
             r = rp2040_swd_set_target_state(1, HALT)  &&  rp2040_swd_set_target_state(0, HALT);
             // post: both cores in HALT
             break;
-
-#if 0
-        case RUN:
-            // Resume the target without resetting it
-            // pre: -
-            r = rp2040_swd_set_target_state(1, HALT)  &&  rp2040_swd_set_target_state(0, RUN);
-            swd_off();
-            // post: both cores are running
-            break;
-
-        case POST_FLASH_RESET:
-            // Reset target after flash programming
-            break;
-
-        case POWER_ON:
-            // Poweron the target
-            break;
-
-        case SHUTDOWN:
-            // Poweroff the target
-            break;
-#endif
 
         case ATTACH:
             r = rp2040_swd_set_target_state(1, ATTACH)  &&  rp2040_swd_set_target_state(0, ATTACH);
@@ -616,7 +515,7 @@ static uint8_t rp2040_target_set_state(target_state_t state)
             break;
     }
 
-//    printf("----- rp2040_target_set_state(%d) = %d\n", state, r);
+    printf("----- rp2040_target_set_state(%d) = %d\n", state, r);
 
     return r;
 }   // rp2040_target_set_state
