@@ -416,6 +416,7 @@ void pico_prerun_board_config(void)
         probe_set_swclk_freq_khz(f_khz, true);
     }
 
+    target_set_state(HALT);
     target_set_state(RESET_RUN);
 }   // pico_prerun_board_config
 

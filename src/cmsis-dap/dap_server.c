@@ -137,8 +137,8 @@
     // _DAP_PACKET_SIZE_NEW does not seem to be the decisive parameter, neither _DAP_PACKET_COUNT_NEW.
     // So below are good values
     //
-    #define _DAP_PACKET_COUNT_NEW       16
-    #define _DAP_PACKET_SIZE_NEW        64
+    #define _DAP_PACKET_COUNT_NEW       4
+    #define _DAP_PACKET_SIZE_NEW        512
 
 //    #define DAP_DEBUG                   1
 
@@ -1019,6 +1019,7 @@ void dap_thread(void *ptr)
                 picoprobe_error("dap_thread(): malformed request (probe may crash)\n");
             }
 #if 0  &&  DAP_DEBUG
+            // better use DAPdeb.c
             picoprobe_info("%u %u DAP cmd %s len %d %d\n",
                            (unsigned)requestQueue.wr_idx, (unsigned)requestQueue.rd_idx,
                            dap_cmd_string[RD_SLOT_PTR(requestQueue)[0]],
