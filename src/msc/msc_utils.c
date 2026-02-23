@@ -99,7 +99,8 @@ static void target_disconnect(TimerHandle_t xTimer)
             picoprobe_info("=================================== MSC disconnect target: %d bytes transferred, %d bytes/s\n",
                            (int)transferred_bytes, (int)t_bps);
             led_state(LS_MSC_DISCONNECTED);
-            if (had_write) {
+            //if (had_write)                 // TODO not sure here
+            {
                 if (USE_RP2040()) {
                 }
                 else if (USE_RP2350()) {
@@ -107,7 +108,7 @@ static void target_disconnect(TimerHandle_t xTimer)
                 else {
                     flash_manager_uninit();
                 }
-                target_set_state(HALT);
+                target_set_state(RESET_PROGRAM);
                 target_set_state(RESET_RUN);
                 rtt_console_redetect();
             }

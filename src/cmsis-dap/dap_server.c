@@ -764,7 +764,7 @@ static void HandleDapConnectDisconnect(const uint8_t *cmd, uint32_t cmdlen)
             sw_unlock(E_SWLOCK_DAPV2);
 
             // try to restart target after disconnect
-            target_set_state(HALT);
+            target_set_state(RESET_PROGRAM);
             target_set_state(RESET_RUN);
             rtt_console_redetect();
         }
