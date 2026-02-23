@@ -37,6 +37,7 @@
 #include "msc_utils.h"
 #include "sw_lock.h"
 #include "led.h"
+#include "rtt_io.h"
 
 #include "FreeRTOS.h"
 #include "message_buffer.h"
@@ -106,8 +107,9 @@ static void target_disconnect(TimerHandle_t xTimer)
                 else {
                     flash_manager_uninit();
                 }
-                target_set_state(RESET_PROGRAM);
+                target_set_state(HALT);
                 target_set_state(RESET_RUN);
+                rtt_console_redetect();
             }
             is_connected = false;
         }
@@ -142,7 +144,7 @@ bool msc_target_connect(bool write_mode)
             picoprobe_info("=================================== MSC connect target\n");
             led_state(LS_MSC_CONNECTED);
 
-            ok = target_set_state(ATTACH);
+            ok = target_set_state(RESET_PROGRAM);
             must_initialize = ok;
             is_connected = true;                   // disconnect must be issued!
             had_write = false;

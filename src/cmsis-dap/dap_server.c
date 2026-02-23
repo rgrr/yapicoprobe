@@ -49,6 +49,7 @@
 #include "led.h"
 #include "sw_lock.h"
 #include "minIni/minIni.h"
+#include "rtt_io.h"
 
 /*
  * The following is part of a hack to make DAP_PACKET_COUNT a variable.
@@ -761,6 +762,11 @@ static void HandleDapConnectDisconnect(const uint8_t *cmd, uint32_t cmdlen)
             picoprobe_info("=================================== DAPv2 disconnect target\n");
             led_state(LS_DAPV2_DISCONNECTED);
             sw_unlock(E_SWLOCK_DAPV2);
+
+            // try to restart target after disconnect
+            target_set_state(HALT);
+            target_set_state(RESET_RUN);
+            rtt_console_redetect();
         }
     }
 }   // HandleDapConnectDisconnect
