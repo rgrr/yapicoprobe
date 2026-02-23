@@ -151,7 +151,7 @@ static bool dp_core_select(uint8_t _core)
     rr = swd_read_dp(DP_IDCODE, &rv);
 //    printf("--1  id(%u)=0x%08lx %d\n", _core, rv, rr);
 
-    if ( !rr  ||  rv == 0x10212927)
+    if (rr  &&  rv == 0x10212927)
     {
         //
         // -> cannot select core
@@ -301,8 +301,7 @@ static bool rp2040_swd_set_target_state(uint8_t core, target_state_t state)
  * \return true -> ok
  *
  * \note
- *    - the current (hardware) reset operation does a reset of both cores
- *    -
+ *    Not all cases are filled because they are actually never used.  So do not waste time there.
  */
 {
     uint32_t val;
@@ -310,57 +309,67 @@ static bool rp2040_swd_set_target_state(uint8_t core, target_state_t state)
 
 //    printf("+++++++++++++++ rp2040_swd_set_target_state(%d, %d)\n", core, state);
 
+//    dp_core_select(core);
+
     /* Calling swd_init prior to entering RUN state causes operations to fail. */
     if (state != RUN) {
         swd_init();
     }
 
     switch (state) {
+#if 0
         case RESET_HOLD:
+            if ( !rp2040_swd_init_debug(core)) {
+                return false;
+            }
+
             swd_set_target_reset(1);
             break;
+#endif
 
         case RESET_RUN:
+            // TODO what should be done here actually?
+            if ( !rp2040_swd_init_debug(core)) {
+                return false;
+            }
+
             swd_set_target_reset(1);
             osDelay(2);
             swd_set_target_reset(0);
             osDelay(2);
 
-            if (!rp2040_swd_init_debug(core)) {
-                return false;
-            }
-
             // Power down
             // Per ADIv6 spec. Clear first CSYSPWRUPREQ followed by CDBGPWRUPREQ
-            if (!swd_read_dp(DP_CTRL_STAT, &val)) {
+            if ( !swd_read_dp(DP_CTRL_STAT, &val)) {
                 return false;
             }
 
-            if (!swd_write_dp(DP_CTRL_STAT, val & ~CSYSPWRUPREQ)) {
+            if ( !swd_write_dp(DP_CTRL_STAT, val & ~CSYSPWRUPREQ)) {
                 return false;
             }
 
             // Wait until ACK is deasserted
             do {
-                if (!swd_read_dp(DP_CTRL_STAT, &val)) {
+                if ( !swd_read_dp(DP_CTRL_STAT, &val)) {
                     return false;
                 }
             } while ((val & (CSYSPWRUPACK)) != 0);
 
-            if (!swd_write_dp(DP_CTRL_STAT, val & ~CDBGPWRUPREQ)) {
+            if ( !swd_write_dp(DP_CTRL_STAT, val & ~CDBGPWRUPREQ)) {
                 return false;
             }
 
             // Wait until ACK is deasserted
             do {
-                if (!swd_read_dp(DP_CTRL_STAT, &val)) {
+                if ( !swd_read_dp(DP_CTRL_STAT, &val)) {
                     return false;
                 }
             } while ((val & (CDBGPWRUPACK)) != 0);
             break;
 
         case RESET_PROGRAM:
-            if (!rp2040_swd_init_debug(core)) {
+            // TODO what should be done here actually?
+            if ( !rp2040_swd_init_debug(core)) {
                 return false;
             }
 
@@ -378,7 +387,7 @@ static bool rp2040_swd_set_target_state(uint8_t core, target_state_t state)
 
             // Wait until core is halted
             do {
-                if (!swd_read_word(DBG_HCSR, &val)) {
+                if ( !swd_read_word(DBG_HCSR, &val)) {
                     return false;
                 }
             } while ((val & S_HALT) == 0);
@@ -388,80 +397,86 @@ static bool rp2040_swd_set_target_state(uint8_t core, target_state_t state)
             }
 
             // Enable halt on reset
-            if (!swd_write_word(DBG_EMCR, VC_CORERESET)) {
+            if ( !swd_write_word(DBG_EMCR, VC_CORERESET)) {
                 return false;
             }
 
             // Perform a soft reset
-            if (!swd_read_word(NVIC_AIRCR, &val)) {
+            if ( !swd_read_word(NVIC_AIRCR, &val)) {
                 return false;
             }
 
-            if (!swd_write_word(NVIC_AIRCR, VECTKEY | (val & SCB_AIRCR_PRIGROUP_Msk) | soft_reset)) {
+            if ( !swd_write_word(NVIC_AIRCR, VECTKEY | (val & SCB_AIRCR_PRIGROUP_Msk) | soft_reset)) {
                 return false;
             }
 
             osDelay(2);
 
             do {
-                if (!swd_read_word(DBG_HCSR, &val)) {
+                if ( !swd_read_word(DBG_HCSR, &val)) {
                     return false;
                 }
             } while ((val & S_HALT) == 0);
 
             // Disable halt on reset
-            if (!swd_write_word(DBG_EMCR, 0)) {
+            if ( !swd_write_word(DBG_EMCR, 0)) {
                 return false;
             }
             break;
 
+#if 0
         case NO_DEBUG:
-            if (!swd_write_word(DBG_HCSR, DBGKEY)) {
+            dp_core_select(core);
+            if ( !swd_write_word(DBG_HCSR, DBGKEY)) {
                 return false;
             }
             break;
 
         case DEBUG:
-            if (!swd_clear_errors()) {
+            dp_core_select(core);
+            if ( !swd_clear_errors()) {
                 return false;
             }
 
             // Ensure CTRL/STAT register selected in DPBANKSEL
-            if (!swd_write_dp(DP_SELECT, 0)) {
+            if ( !swd_write_dp(DP_SELECT, 0)) {
                 return false;
             }
 
             // Power up
-            if (!swd_write_dp(DP_CTRL_STAT, CSYSPWRUPREQ | CDBGPWRUPREQ)) {
+            if ( !swd_write_dp(DP_CTRL_STAT, CSYSPWRUPREQ | CDBGPWRUPREQ)) {
                 return false;
             }
 
             // Enable debug
-            if (!swd_write_word(DBG_HCSR, DBGKEY | C_DEBUGEN)) {
+            if ( !swd_write_word(DBG_HCSR, DBGKEY | C_DEBUGEN)) {
                 return false;
             }
             break;
+#endif
 
         case HALT:
-            if (!rp2040_swd_init_debug(core)) {
+            if ( !rp2040_swd_init_debug(core)) {
                 return false;
             }
 
             // Enable debug and halt the core (DHCSR <- 0xA05F0003)
-            if (!swd_write_word(DBG_HCSR, DBGKEY | C_DEBUGEN | C_HALT)) {
+            if ( !swd_write_word(DBG_HCSR, DBGKEY | C_DEBUGEN | C_HALT)) {
                 return false;
             }
 
             // Wait until core is halted
             do {
-                if (!swd_read_word(DBG_HCSR, &val)) {
+                if ( !swd_read_word(DBG_HCSR, &val)) {
                     return false;
                 }
             } while ((val & S_HALT) == 0);
             break;
 
+#if 0
         case RUN:
-            if (!swd_write_word(DBG_HCSR, DBGKEY)) {
+            dp_core_select(core);
+            if ( !swd_write_word(DBG_HCSR, DBGKEY)) {
                 return false;
             }
             break;
@@ -469,16 +484,18 @@ static bool rp2040_swd_set_target_state(uint8_t core, target_state_t state)
         case POST_FLASH_RESET:
             // This state should be handled in target_reset.c, nothing needs to be done here.
             break;
+#endif
 
         case ATTACH:
             // attach without doing anything else
-            if (!rp2040_swd_init_debug(core)) {
+            if ( !rp2040_swd_init_debug(core)) {
                 return false;
             }
             break;
 
         default:
-            return false;
+            panic("rp2040_swd_set_target_state() called with ill parameter %d,%d\n", (int)core, (int)state);
+            break;
     }
 
     return true;
@@ -488,15 +505,27 @@ static bool rp2040_swd_set_target_state(uint8_t core, target_state_t state)
 /*************************************************************************************************/
 
 
+#if 0
 static void rp2040_swd_set_target_reset(uint8_t asserted)
+/**
+ * Hardware signal is not guaranteed to exist
+ */
 {
     extern void probe_reset_pin_set(uint32_t);
 
     // set HW signal accordingly, asserted means "active"
-//    printf("----- rp2040_swd_set_target_reset(%d)\n", asserted);
+    printf("----- rp2040_swd_set_target_reset(%d)\n", asserted);
     probe_reset_pin_set(asserted ? 0 : 1);
 }   // rp2040_swd_set_target_reset
+#endif
 
+
+
+static bool delay_100ms(void)
+{
+    osDelay(100);
+    return true;
+}
 
 
 static uint8_t rp2040_target_set_state(target_state_t state)
@@ -505,7 +534,10 @@ static uint8_t rp2040_target_set_state(target_state_t state)
  * Currently core1 is held most of the time in HALT, so that it does not disturb operation.
  *
  * \note
- *    Take care, that core0 is the selected core at end of function
+ *    - take care, that core0 is the selected core at end of function
+ *    - not all cases are filled because they are actually never used.  So do not waste time there.
+ *
+ * TODO again probe-rs is better and starts the target program reliably
  */
 {
     uint8_t r = false;
@@ -513,40 +545,42 @@ static uint8_t rp2040_target_set_state(target_state_t state)
 //    printf("----- rp2040_target_set_state(%d)\n", state);
 
     switch (state) {
+#if 0
         case RESET_HOLD:
             // Hold target in reset
             // pre: -
-            r = rp2040_swd_set_target_state(0, RESET_HOLD);
+            r = rp2040_swd_set_target_state(0, RESET_HOLD)  &&  rp2040_swd_set_target_state(1, RESET_HOLD);
             // post: both cores are in HW reset
             break;
+#endif
 
         case RESET_PROGRAM:
             // Reset target and setup for flash programming
             // pre: -
-            rp2040_swd_set_target_state(1, HALT);
-            r = rp2040_swd_set_target_state(0, RESET_PROGRAM);
+            r = rp2040_swd_set_target_state(1, HALT)  &&  delay_100ms()  &&  rp2040_swd_set_target_state(0, RESET_PROGRAM);
             // post: core1 in HALT, core0 ready for programming
             break;
 
         case RESET_RUN:
             // Reset target and run normally
             // pre: -
-            r = rp2040_swd_set_target_state(1, RESET_RUN)  &&  rp2040_swd_set_target_state(0, RESET_RUN);
+            r = rp2040_swd_set_target_state(1, HALT)  &&  delay_100ms()  &&  rp2040_swd_set_target_state(0, RESET_RUN);
             swd_off();
             // post: both cores are running
             break;
 
+#if 0
         case NO_DEBUG:
             // Disable debug on running target
             // pre: !swd_off()  &&  core0 selected
-            r = rp2040_swd_set_target_state(0, NO_DEBUG);
+            r = rp2040_swd_set_target_state(1, NO_DEBUG)  &&  rp2040_swd_set_target_state(0, NO_DEBUG);
             // post: core0 in NO_DEBUG
             break;
 
         case DEBUG:
             // Enable debug on running target
             // pre: !swd_off()  &&  core0 selected
-            r = rp2040_swd_set_target_state(0, DEBUG);
+            r = rp2040_swd_set_target_state(1, DEBUG)  &&  rp2040_swd_set_target_state(0, DEBUG);
             // post: core0 in DEBUG
             break;
 
@@ -560,7 +594,7 @@ static uint8_t rp2040_target_set_state(target_state_t state)
         case RUN:
             // Resume the target without resetting it
             // pre: -
-            r = rp2040_swd_set_target_state(1, RUN)  &&  rp2040_swd_set_target_state(0, RUN);
+            r = rp2040_swd_set_target_state(1, HALT)  &&  rp2040_swd_set_target_state(0, RUN);
             swd_off();
             // post: both cores are running
             break;
@@ -576,15 +610,18 @@ static uint8_t rp2040_target_set_state(target_state_t state)
         case SHUTDOWN:
             // Poweroff the target
             break;
+#endif
 
         case ATTACH:
-            r = rp2040_swd_set_target_state(1, ATTACH)  &&  rp2040_swd_set_target_state(0, ATTACH);
+            r = rp2040_swd_set_target_state(1, ATTACH)  &&  delay_100ms()  &&  rp2040_swd_set_target_state(0, ATTACH);
             break;
 
         default:
-            r = false;
+            panic("rp2040_target_set_state() called with ill parameter %d\n", (int)state);
             break;
     }
+
+//    printf("----- rp2040_target_set_state(%d) = %d\n", state, r);
 
     return r;
 }   // rp2040_target_set_state
@@ -594,7 +631,7 @@ static uint8_t rp2040_target_set_state(target_state_t state)
 
 const target_family_descriptor_t g_raspberry_rp2040_family = {
     .family_id                = TARGET_RP2040_FAMILY_ID,
-#if 1
+#if 0
     .swd_set_target_reset     = &rp2040_swd_set_target_reset,
 #else
     .default_reset_type       = kSoftwareReset,
