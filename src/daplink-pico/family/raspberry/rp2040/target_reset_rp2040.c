@@ -521,13 +521,6 @@ static void rp2040_swd_set_target_reset(uint8_t asserted)
 
 
 
-static bool delay_100ms(void)
-{
-    osDelay(100);
-    return true;
-}
-
-
 static uint8_t rp2040_target_set_state(target_state_t state)
 /**
  * Set state of the RP2040.
@@ -557,14 +550,14 @@ static uint8_t rp2040_target_set_state(target_state_t state)
         case RESET_PROGRAM:
             // Reset target and setup for flash programming
             // pre: -
-            r = rp2040_swd_set_target_state(1, HALT)  &&  delay_100ms()  &&  rp2040_swd_set_target_state(0, RESET_PROGRAM);
+            r = rp2040_swd_set_target_state(1, HALT)  &&  rp2040_swd_set_target_state(0, RESET_PROGRAM);
             // post: core1 in HALT, core0 ready for programming
             break;
 
         case RESET_RUN:
             // Reset target and run normally
             // pre: -
-            r = rp2040_swd_set_target_state(1, HALT)  &&  delay_100ms()  &&  rp2040_swd_set_target_state(0, RESET_RUN);
+            r = rp2040_swd_set_target_state(1, RESET_RUN)  &&  rp2040_swd_set_target_state(0, RESET_RUN);
             swd_off();
             // post: both cores are running
             break;
@@ -583,6 +576,7 @@ static uint8_t rp2040_target_set_state(target_state_t state)
             r = rp2040_swd_set_target_state(1, DEBUG)  &&  rp2040_swd_set_target_state(0, DEBUG);
             // post: core0 in DEBUG
             break;
+#endif
 
         case HALT:
             // Halt the target without resetting it
@@ -591,6 +585,7 @@ static uint8_t rp2040_target_set_state(target_state_t state)
             // post: both cores in HALT
             break;
 
+#if 0
         case RUN:
             // Resume the target without resetting it
             // pre: -
@@ -613,7 +608,7 @@ static uint8_t rp2040_target_set_state(target_state_t state)
 #endif
 
         case ATTACH:
-            r = rp2040_swd_set_target_state(1, ATTACH)  &&  delay_100ms()  &&  rp2040_swd_set_target_state(0, ATTACH);
+            r = rp2040_swd_set_target_state(1, ATTACH)  &&  rp2040_swd_set_target_state(0, ATTACH);
             break;
 
         default:
