@@ -4,7 +4,7 @@
 #
 VERSION_MAJOR        := 2
 VERSION_MINOR        := 2
-VERSION_PATCH        := 3
+VERSION_PATCH        := 4
 
 BUILD_DIR            := _build
 BUILDEE_DIR          := _buildee
@@ -221,7 +221,7 @@ show-options:
 # - most work is done in the debuggEE
 # 
 DEBUGGER_SERNO ?= 2739E00F30FE67E7
-OPENOCD_R := /home/hardy/.pico-sdk/openocd/0.12.0+dev
+OPENOCD_R := ~/.pico-sdk/openocd/0.12.0+dev
 OPENOCD   := $(OPENOCD_R)/openocd
 OPENOCD_S := $(OPENOCD_R)/scripts
 #DEBUGGEE_CLIB := picolibc
@@ -246,6 +246,12 @@ debuggEE-flash:
 	$(MAKE) all-debuggEE
 	pyocd flash -t $(PICO_CHIPEE) -f 6M --probe $(DEBUGGER_SERNO) -e auto                          $(BUILDEE_DIR)/$(PROJECT).hex
 #	pyocd flash -t $(PICO_CHIPEE) -f 6M --probe $(DEBUGGER_SERNO) -e auto -L "pyocd.probe.*=debug" $(BUILDEE_DIR)/$(PROJECT).hex
+	@echo "ok."
+
+.PHONY: debuggEE-flash-cp
+debuggEE-flash-cp:
+	$(MAKE) all-debuggEE
+	cp $(BUILDEE_DIR)/$(PROJECT).uf2 /media/picoprobe
 	@echo "ok."
 
 .PHONY: debuggEE-flash-openocd
@@ -337,3 +343,10 @@ cmake-create-debugger: clean-build
 .PHONY: benchmark-probe-rs
 benchmark-probe-rs:
 	probe-rs benchmark --protocol swd --address 0x20020000 --min-speed 1000 --max-speed 10000 --chip $(PICO_CHIPEE)
+
+
+# this is actually just a reminder for the probe-rs command line
+# "probe-rs gdb" does actually not run well under Eclipse(?)
+.PHONY: gdb-server-probe-rs
+gdb-server-probe-rs:
+	probe-rs gdb --chip rp2350 --gdb-connection-string 127.0.0.1:3333 --speed 9000 --protocol swd
