@@ -137,8 +137,8 @@
     // _DAP_PACKET_SIZE_NEW does not seem to be the decisive parameter, neither _DAP_PACKET_COUNT_NEW.
     // So below are good values
     //
-    #define _DAP_PACKET_COUNT_NEW       4
-    #define _DAP_PACKET_SIZE_NEW        512
+    #define _DAP_PACKET_COUNT_NEW       16
+    #define _DAP_PACKET_SIZE_NEW        64
 
 //    #define DAP_DEBUG                   1
 
@@ -915,7 +915,7 @@ bool dap_edpt_xfer_cb(uint8_t __unused rhport, uint8_t ep_addr, xfer_result_t re
             WR_SLOT_LEN(requestQueue) = xferred_bytes;
 
 #if _DAP_PACKET_SIZE_NEW != 64
-            if (xferred_bytes == DAP_GetCommandLength(RD_SLOT_PTR(requestQueue), xferred_bytes) + 1)
+            if (xferred_bytes == DAP_GetCommandLength(WR_SLOT_PTR(requestQueue), xferred_bytes) + 1)
             {
                 // this is a special pyocd (<= 0.42.0) hack (and of course openocd does not like it)
                 // see https://github.com/pyocd/pyOCD/issues/1871
@@ -1016,7 +1016,9 @@ void dap_thread(void *ptr)
             //
             if (RD_SLOT_LEN(requestQueue) != DAP_GetCommandLength(RD_SLOT_PTR(requestQueue), RD_SLOT_LEN(requestQueue)))
             {
-                picoprobe_error("dap_thread(): malformed request (probe may crash)\n");
+                picoprobe_error("dap_thread(): malformed request, len:%d, explen:%d (probe may crash)\n",
+                                (int)RD_SLOT_LEN(requestQueue),
+                                (int)DAP_GetCommandLength(RD_SLOT_PTR(requestQueue), RD_SLOT_LEN(requestQueue)));
             }
 #if 0  &&  DAP_DEBUG
             // better use DAPdeb.c
