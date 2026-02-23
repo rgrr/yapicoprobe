@@ -34,6 +34,8 @@
     #define SCB_AIRCR_PRIGROUP_Msk             (7UL << SCB_AIRCR_PRIGROUP_Pos)                /*!< SCB AIRCR: PRIGROUP Mask */
 #endif
 
+#define SWJ_SEQ(LEN, ...)    do { static const uint8_t data[] = __VA_ARGS__;  SWJ_Sequence(LEN, data); } while (0)
+#define DAP_EXEC(RESP, ...)  do { static const uint8_t req[] = __VA_ARGS__;   DAP_ExecuteCommand(req, RESP); } while (0)
 
 static const uint32_t soft_reset = SYSRESETREQ;
 
@@ -48,50 +50,69 @@ static const uint32_t soft_reset = SYSRESETREQ;
 
 
 // Core will point at whichever one is current...
-static uint8_t core;
+static uint8_t core = 0xaa;
 
 
 /*************************************************************************************************/
 
 
 /// taken from pico_debug and output of pyODC
-static void swd_from_dormant(void)
-{
-    const uint8_t ones_seq[] = {0xff};
-    const uint8_t selection_alert_seq[] = {0x92, 0xf3, 0x09, 0x62, 0x95, 0x2d, 0x85, 0x86, 0xe9, 0xaf, 0xdd, 0xe3, 0xa2, 0x0e, 0xbc, 0x19};
-    const uint8_t zero_seq[] = {0x00};
-    const uint8_t act_seq[] = { 0x1a };
-
-//    printf("---swd_from_dormant()\n");
-
-    SWJ_Sequence(  8, ones_seq);
-    SWJ_Sequence(128, selection_alert_seq);
-    SWJ_Sequence(  4, zero_seq);
-    SWJ_Sequence(  8, act_seq);
-}   // swd_from_dormant
-
-
-/// taken from pico_debug and output of pyODC
 static void swd_line_reset(void)
+/**
+ * Line reset sequence according to ADIv5 B4.3.3
+ */
 {
-    const uint8_t reset_seq[] = {0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x03};
-
 //    printf("---swd_line_reset()\n");
 
-    SWJ_Sequence( 52, reset_seq);
+    SWJ_SEQ( 54, {0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x07});    // 51 high, 3 low
 }   // swd_line_reset
 
 
-static void swd_targetsel(uint8_t core)
+static void swd_from_dormant(void)
+/**
+ * Leave dormant state according to ADIv5 B5.3.4
+ *
+ * Sequence is taken from probe-rs and pyocd.  Sometimes the rp2040 goes into a state (rescue DP is seen, but TARGETSEL
+ * does not work), where it cannot be recovered from.
+ */
 {
-    static const uint8_t out1[]        = {0x99};
-    static const uint8_t core_0[]      = {0x27, 0x29, 0x00, 0x01, 0x00};
-    static const uint8_t core_1[]      = {0x27, 0x29, 0x00, 0x11, 0x01};
-    static const uint8_t core_rescue[] = {0x27, 0x29, 0x00, 0xf1, 0x00};
-    static const uint8_t out2[]        = {0x00};
+//    printf("---swd_from_dormant()\n");
+
+    SWJ_SEQ( 51, {0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x07});
+    SWJ_SEQ( 31, {0xba, 0xbb, 0xbb, 0x33});
+    SWJ_SEQ(  8, {0xff});
+#if 1
+    // this is the correct alert sequence
+    SWJ_SEQ(128, {0x92, 0xf3, 0x09, 0x62, 0x95, 0x2d, 0x85, 0x86, 0xe9, 0xaf, 0xdd, 0xe3, 0xa2, 0x0e, 0xbc, 0x19});
+#else
+    // this sequence kills multidrop DPs, if not do some resets on probe
+    SWJ_SEQ(128, {0x19, 0xE8, 0x19, 0x32, 0x12, 0xE1, 0x97, 0x4D, 0x45, 0xED, 0xB8, 0x01, 0x22, 0x82, 0x31, 0x21});
+#endif
+    SWJ_SEQ( 12, {0xa0, 0x01});
+    SWJ_SEQ( 54, {0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x07});
+}   // swd_from_dormant
+
+
+static void swd_targetsel(uint8_t core)
+/**
+ * Select target core.
+ * This cannot be done via normal swd_write_dp() because there is no handshake.
+ * Function might be called by dp_core_select() only.
+ *
+ * See also ADIv5.2 specification, "B4.3.4 Target selection protocol, SWD protocol version 2"
+ */
+{
+    static const uint8_t out1[]          = {0x99};
+    static const uint8_t core_0[]        = {0x27, 0x29, 0x00, 0x01, 0x00};
+    static const uint8_t core_1[]        = {0x27, 0x29, 0x00, 0x11, 0x01};
+    static const uint8_t core_rescue[]   = {0x27, 0x29, 0x00, 0xf1, 0x00};
+    static const uint8_t core_deselect[] = {0xff, 0xff, 0xff, 0xff, 0x00};
+    static const uint8_t out2[]          = {0x00};
     static uint8_t input;
 
 //    printf("---swd_targetsel(%u)\n", core);
+
+    swd_line_reset();
 
     SWD_Sequence(8, out1, NULL);
     SWD_Sequence(0x80 + 5, NULL, &input);
@@ -99,46 +120,95 @@ static void swd_targetsel(uint8_t core)
         SWD_Sequence(33, core_0, NULL);
     else if (core == 1)
         SWD_Sequence(33, core_1, NULL);
-    else
+    else if (core == 15)
         SWD_Sequence(33, core_rescue, NULL);
-    SWD_Sequence(2, out2, NULL);
+    else
+        SWD_Sequence(33, core_deselect, NULL);
+    SWD_Sequence(2, out2, NULL);                      // before: 5 bits
 }   // swd_targetsel
 
 
+static bool dp_core_select(uint8_t _core)
 /**
  * @brief Does the basic core select and then reads DP_IDCODE as required
  *
  * See also ADIv5.2 specification, "B4.3.4 Target selection protocol, SWD protocol version 2"
+ *
  * @param _core
  * @return true -> ok
  */
-static bool dp_core_select(uint8_t _core)
 {
     uint32_t rv;
+    bool rr;
 
-//    printf("---dp_core_select(%u)\n", _core);
+//    printf("---                dp_core_select(%u)\n", _core);
 
     if (core == _core) {
         return true;
     }
 
-    swd_line_reset();
     swd_targetsel(_core);
+    rr = swd_read_dp(DP_IDCODE, &rv);
+//    printf("--1  id(%u)=0x%08lx %d\n", _core, rv, rr);
+
+    if ( !rr  ||  rv == 0x10212927)
+    {
+        //
+        // -> cannot select core
+        //    recover target DP from this situation just like probe-rs does ("probe-rs info" can recover!)
+        //    TODO do not know how probe-rs is actually recovering.  Disassemble this (or read the source code ;-))
+        //    Commands have been recorded with DAPdeb.c
+        //
+        uint8_t resp[64];
+
+        // DAP_EXEC(resp, {});
+        DAP_EXEC(resp, {0x02, 0x01});                                                      // connect
+        // DAP_EXEC(resp, {0x11, 0x40, 0x42, 0x0f, 0x00});
+        DAP_EXEC(resp, {0x04, 0x00, 0xff, 0xff, 0x00, 0x00});                              // transfer configure
+        DAP_EXEC(resp, {0x13, 0x00});                                                      // SWD configure
+        // DAP_EXEC(resp, {0x01, 0x00, 0x01});
+
+        DAP_EXEC(resp, {0x12, 0x33, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x07});            // line reset
+        DAP_EXEC(resp, {0x12, 0x10, 0x9e, 0xe7});                                          // JTAG2SWD
+        DAP_EXEC(resp, {0x12, 0x36, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x07});            // line reset
+        DAP_EXEC(resp, {0x05, 0x00, 0x01, 0x02});                                          // dp_idcode
+        DAP_EXEC(resp, {0x05, 0x00, 0x01, 0x00, 0x1e, 0x00, 0x00, 0x00});
+        DAP_EXEC(resp, {0x05, 0x00, 0x02, 0x08, 0x00, 0x00, 0x00, 0x00, 0x06});
+        DAP_EXEC(resp, {0x05, 0x00, 0x02, 0x08, 0x00, 0x00, 0x00, 0x00, 0x02});
+        DAP_EXEC(resp, {0x05, 0x00, 0x01, 0x06});
+        //
+        DAP_EXEC(resp, {0x05, 0x00, 0x02, 0x00, 0x1f, 0x00, 0x00, 0x00, 0x06});
+        DAP_EXEC(resp, {0x05, 0x00, 0x01, 0x02});
+        DAP_EXEC(resp, {0x05, 0x00, 0x01, 0x02});
+        DAP_EXEC(resp, {0x05, 0x00, 0x02, 0x08, 0x02, 0x00, 0x00, 0x00, 0x06});
+        DAP_EXEC(resp, {0x05, 0x00, 0x02, 0x08, 0x03, 0x00, 0x00, 0x00, 0x06});
+        DAP_EXEC(resp, {0x05, 0x00, 0x02, 0x08, 0x00, 0x00, 0x00, 0x00, 0x06});
+        DAP_EXEC(resp, {0x05, 0x00, 0x02, 0x08, 0xf0, 0x00, 0x00, 0x00, 0x0f});
+        DAP_EXEC(resp, {0x05, 0x00, 0x03, 0x08, 0x00, 0x00, 0x00, 0x00, 0x04, 0x00, 0x00, 0x00, 0x00, 0x06});
+
+        DAP_EXEC(resp, {0x03});                                                            // disconnect
+
+        swd_from_dormant();
+        swd_targetsel(_core);
+        rr = swd_read_dp(DP_IDCODE, &rv);
+
+        picoprobe_info("HAD TO RECOVER FROM HANGING DP ON TARGET, id=0x%08x,%d\n", (unsigned)rv, rr);
+    }
 
     CHECK_OK_BOOL(swd_read_dp(DP_IDCODE, &rv));
-//    printf("---  id(%u)=0x%08lx\n", _core, rv);   // 0x0bc12477 is the RP2040
+//    printf("--2  id(%u)=0x%08lx\n", _core, rv);   // 0x0bc12477 is the RP2040
 
     core = _core;
     return true;
 }   // dp_core_select
 
 
+static bool dp_disable_breakpoint()
 /**
  * Clear all HW breakpoints.
  * \pre
  *    DP must be powered on
  */
-static bool dp_disable_breakpoint()
 {
     static const uint32_t bp_reg[4] = { 0xE0002008, 0xE000200C, 0xE0002010, 0xE0002014 };
 
@@ -158,6 +228,7 @@ static bool dp_disable_breakpoint()
 #define CHECK_ABORT(COND)          if ( !(COND)) { do_abort = true; continue; }
 #define CHECK_ABORT_BREAK(COND)    if ( !(COND)) { do_abort = true; break; }
 
+static bool rp2040_swd_init_debug(uint8_t core)
 /**
  * Try very hard to initialize the target processor.
  * Code is very similar to the one in swd_host.c except that the JTAG2SWD() sequence is not used.
@@ -165,7 +236,6 @@ static bool dp_disable_breakpoint()
  * \note
  *    swd_host has to be tricked in it's caching of DP_SELECT and AP_CSW
  */
-static bool rp2040_swd_init_debug(uint8_t core)
 {
     uint32_t tmp = 0;
     int i = 0;
@@ -213,7 +283,7 @@ static bool rp2040_swd_init_debug(uint8_t core)
         CHECK_ABORT( swd_write_ap(AP_CSW, 1) );                                // force dap_state.csw to "0"
         CHECK_ABORT( swd_write_ap(AP_CSW, 0) );
 
-        CHECK_ABORT( swd_read_ap(AP_IDR, &tmp) );                                // AP IDR: must it be 0x4770031?
+        CHECK_ABORT( swd_read_ap(AP_IDR, &tmp) );                              // AP IDR: must it be 0x4770031?
         CHECK_ABORT( swd_write_dp(DP_SELECT, 0) );
 
         return true;
@@ -225,6 +295,7 @@ static bool rp2040_swd_init_debug(uint8_t core)
 
 
 
+static bool rp2040_swd_set_target_state(uint8_t core, target_state_t state)
 /**
  * Set state of a single core, the core will be selected as well.
  * \return true -> ok
@@ -233,7 +304,6 @@ static bool rp2040_swd_init_debug(uint8_t core)
  *    - the current (hardware) reset operation does a reset of both cores
  *    -
  */
-static bool rp2040_swd_set_target_state(uint8_t core, target_state_t state)
 {
     uint32_t val;
     int8_t ap_retries = 2;
@@ -429,6 +499,7 @@ static void rp2040_swd_set_target_reset(uint8_t asserted)
 
 
 
+static uint8_t rp2040_target_set_state(target_state_t state)
 /**
  * Set state of the RP2040.
  * Currently core1 is held most of the time in HALT, so that it does not disturb operation.
@@ -436,7 +507,6 @@ static void rp2040_swd_set_target_reset(uint8_t asserted)
  * \note
  *    Take care, that core0 is the selected core at end of function
  */
-static uint8_t rp2040_target_set_state(target_state_t state)
 {
     uint8_t r = false;
 
@@ -524,6 +594,12 @@ static uint8_t rp2040_target_set_state(target_state_t state)
 
 const target_family_descriptor_t g_raspberry_rp2040_family = {
     .family_id                = TARGET_RP2040_FAMILY_ID,
+#if 1
     .swd_set_target_reset     = &rp2040_swd_set_target_reset,
+#else
+    .default_reset_type       = kSoftwareReset,
+    .soft_reset_type          = SYSRESETREQ,
+    .swd_set_target_reset     = NULL,
+#endif
     .target_set_state         = &rp2040_target_set_state,
 };
