@@ -37,7 +37,6 @@
 #include "msc_utils.h"
 #include "sw_lock.h"
 #include "led.h"
-#include "rtt_io.h"
 
 #include "FreeRTOS.h"
 #include "message_buffer.h"
@@ -99,8 +98,7 @@ static void target_disconnect(TimerHandle_t xTimer)
             picoprobe_info("=================================== MSC disconnect target: %d bytes transferred, %d bytes/s\n",
                            (int)transferred_bytes, (int)t_bps);
             led_state(LS_MSC_DISCONNECTED);
-            if (had_write)
-            {
+            if (had_write) {
                 if (USE_RP2040()) {
                 }
                 else if (USE_RP2350()) {
