@@ -89,11 +89,8 @@
 #define MININI_VAR_REND      "ram_end"
 #define MININI_VAR_PWD       "pwd"
 #define MININI_VAR_RTT       "rtt"
-#define MININI_VAR_DAP_PSIZE "dap_psize"
-#define MININI_VAR_DAP_PCNT  "dap_pcnt"
 
 #define MININI_VAR_NAMES    MININI_VAR_NET, MININI_VAR_NICK, MININI_VAR_FCPU, MININI_VAR_FSWD, \
-                            MININI_VAR_RSTART, MININI_VAR_REND, MININI_VAR_PWD, MININI_VAR_RTT, \
-                            MININI_VAR_DAP_PSIZE, MININI_VAR_DAP_PCNT
+                            MININI_VAR_RSTART, MININI_VAR_REND, MININI_VAR_PWD, MININI_VAR_RTT
 
 #endif

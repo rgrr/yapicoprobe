@@ -32,16 +32,24 @@
 #define _xxCoNfSTR(S)  #S
 #define xxCoNfSTR(S)   _xxCoNfSTR(S)
 
+#if OPT_CMSIS_DAPV1  ||  OPT_CMSIS_DAPV2
+    #define __OPT_CMSIS_DAP           " [CMSIS:"
+    #define __OPT_CMSIS_DAP_END       "]"
+#else
+    #define __OPT_CMSIS_DAP
+    #define __OPT_CMSIS_DAP_END
+#endif
 #if OPT_CMSIS_DAPV1
-    #define __OPT_CMSIS_DAPV1         " [CMSIS: DAPv1]"
+    #define __OPT_CMSIS_DAPV1     " DAPv1"
 #else
     #define __OPT_CMSIS_DAPV1
 #endif
 #if OPT_CMSIS_DAPV2
-    #define __OPT_CMSIS_DAPV2         " [CMSIS: DAPv2]"
+    #define __OPT_CMSIS_DAPV2     " DAPv2"
 #else
     #define __OPT_CMSIS_DAPV2
 #endif
+
 #if OPT_MSC
     #define __OPT_MSC                 " [MSC: DAPLink]"
 #else
@@ -75,6 +83,7 @@
 #else
     #define __OPT_PROBE_DEBUG_OUT
 #endif
+
 #if OPT_NET
     #define __OPT_NET_IP              " [Net-"
     #if OPT_NET_PROTO_ECM
@@ -112,7 +121,8 @@
 /**
  * CONFIG_FEATURES
  */
-#define CONFIG_FEATURES()  __OPT_CMSIS_DAPV1 __OPT_CMSIS_DAPV2 __OPT_MSC __OPT_TARGET_UART __OPT_SIGROK           \
+#define CONFIG_FEATURES()  __OPT_CMSIS_DAP __OPT_CMSIS_DAPV1 __OPT_CMSIS_DAPV2 __OPT_CMSIS_DAP_END                \
+                           __OPT_MSC __OPT_TARGET_UART __OPT_SIGROK                                               \
                            __OPT_PROBE_DEBUG_OUT __OPT_CDC_SYSVIEW                                                \
                            __OPT_NET_CONF __OPT_NET_SYSVIEW_SERVER __OPT_NET_ECHO_SERVER __OPT_NET_IPERF_SERVER __OPT_NET_CONF_END
 

@@ -4,7 +4,7 @@
 #
 VERSION_MAJOR        := 2
 VERSION_MINOR        := 2
-VERSION_PATCH        := 3
+VERSION_PATCH        := 4
 
 BUILD_DIR            := _build
 BUILDEE_DIR          := _buildee
@@ -41,7 +41,7 @@ endif
 #
 ifeq ($(PICO_BOARDEE),)
     # pico|pico_w|pico_debug_probe|pico2
-    PICO_BOARDEE := pico
+    PICO_BOARDEE := pico2
 endif
 
 PICO_CHIPEE := rp2040
@@ -221,7 +221,7 @@ show-options:
 # - most work is done in the debuggEE
 # 
 DEBUGGER_SERNO ?= 2739E00F30FE67E7
-OPENOCD_R := /home/hardy/.pico-sdk/openocd/0.12.0+dev
+OPENOCD_R := ~/.pico-sdk/openocd/0.12.0+dev
 OPENOCD   := $(OPENOCD_R)/openocd
 OPENOCD_S := $(OPENOCD_R)/scripts
 #DEBUGGEE_CLIB := picolibc
@@ -244,18 +244,23 @@ all-debuggEE:
 .PHONY: debuggEE-flash
 debuggEE-flash:
 	$(MAKE) all-debuggEE
-	pyocd flash -f 6M --probe $(DEBUGGER_SERNO) -e auto $(BUILDEE_DIR)/$(PROJECT).hex
+	pyocd flash -t $(PICO_CHIPEE) -f 6M --probe $(DEBUGGER_SERNO) -e auto                          $(BUILDEE_DIR)/$(PROJECT).hex
+#	pyocd flash -t $(PICO_CHIPEE) -f 6M --probe $(DEBUGGER_SERNO) -e auto -L "pyocd.probe.*=debug" $(BUILDEE_DIR)/$(PROJECT).hex
+	@echo "ok."
+
+.PHONY: debuggEE-flash-cp
+debuggEE-flash-cp:
+	$(MAKE) all-debuggEE
+	cp $(BUILDEE_DIR)/$(PROJECT).uf2 /media/picoprobe
 	@echo "ok."
 
 .PHONY: debuggEE-flash-openocd
 debuggEE-flash-openocd:
 	$(MAKE) all-debuggEE
 	# openocd does much faster flashing
-	$(OPENOCD) -s $(OPENOCD_S) -f interface/cmsis-dap.cfg -f target/$(PICO_CHIPEE).cfg                                   \
+	$(OPENOCD) -s $(OPENOCD_S) -f interface/cmsis-dap.cfg -f target/$(PICO_CHIPEE).cfg                                 \
 	           -c "adapter speed 6000; adapter serial $(DEBUGGER_SERNO)"                                               \
-	           -c "program {$(BUILDEE_DIR)/$(PROJECT).hex}  verify; exit;"
-	# "pyocd reset" required to start
-	pyocd reset -f 6M --probe $(DEBUGGER_SERNO)
+	           -c "program {$(BUILDEE_DIR)/$(PROJECT).hex}  verify reset exit"
 	@echo "ok."
 
 .PHONY: debuggEE-flash-probe-rs
@@ -277,19 +282,19 @@ debuggEE-flash-erase:
 	#           -c "adapter speed 6000; adapter serial $(DEBUGGER_SERNO)"                                              \
 	#           -c "flash init; flash list; flash banks; init; flash erase_address 0x10000000 0x10000; init; exit;"
 	# and this one is slow because chip erase is not implemented in the blobs (src/daplink-pico/family/raspberry/flash_blob.c)
-	pyocd erase --mass
+	pyocd erase --mass -t $(PICO_CHIPEE) -f 6M --probe $(DEBUGGER_SERNO)
 	@echo "ok."
 
 
 .PHONY: debuggEE-reset
 debuggEE-reset:
-	pyocd reset -v -f 6M --probe $(DEBUGGER_SERNO)
+	pyocd reset -v -t $(PICO_CHIPEE) -f 6M --probe $(DEBUGGER_SERNO)
 
 .PHONY: debuggEE-reset-openocd
 debuggEE-reset-openocd:
 	$(OPENOCD) -s $(OPENOCD_S) -f interface/cmsis-dap.cfg -f target/$(PICO_CHIPEE).cfg                                 \
 	           -c "adapter speed 6000; adapter serial $(DEBUGGER_SERNO)"                                               \
-	           -c "init; exit;"
+	           -c "init; reset run; exit;"
 
 .PHONY: debuggEE-reset-probe-rs
 debuggEE-reset-probe-rs:
@@ -302,7 +307,7 @@ cmake-create-debuggEE: clean-build-debuggEE
 	         $(CMAKE_FLAGS)                                                                                            \
  	         -DPICO_CLIB=$(DEBUGGEE_CLIB)                                                                              \
 	         -DOPT_NET= -DOPT_PROBE_DEBUG_OUT=RTT                                                                      \
-	         -DOPT_SIGROK=0 -DOPT_MSC=0 -DOPT_CMSIS_DAPV1=0 -DOPT_CMSIS_DAPV2=0 -DOPT_TARGET_UART=1
+	         -DOPT_SIGROK=0 -DOPT_MSC=0 -DOPT_CMSIS_DAPV1=0 -DOPT_CMSIS_DAPV2=1 -DOPT_TARGET_UART=1
 
 
 .PHONY: cmake-create-debuggEE-clang
@@ -313,7 +318,7 @@ cmake-create-debuggEE-clang: clean-build-debuggEE
  	         -DPICO_CLIB=llvm_libc                                                                                     \
 	         -DPICO_COMPILER=pico_arm_clang                                                                            \
 	         -DOPT_NET= -DOPT_PROBE_DEBUG_OUT=RTT                                                                      \
-	         -DOPT_SIGROK=0 -DOPT_MSC=0 -DOPT_CMSIS_DAPV1=0 -DOPT_CMSIS_DAPV2=0 -DOPT_TARGET_UART=1
+	         -DOPT_SIGROK=0 -DOPT_MSC=0 -DOPT_CMSIS_DAPV1=0 -DOPT_CMSIS_DAPV2=1 -DOPT_TARGET_UART=1
 
 
 .PHONY: cmake-create-debuggEE-release
@@ -322,7 +327,7 @@ cmake-create-debuggEE-release: clean-build-debuggEE
 	         $(CMAKE_FLAGS)                                                                                            \
 	         -DPICO_CLIB=$(DEBUGGEE_CLIB)                                                                              \
 	         -DOPT_NET= -DOPT_PROBE_DEBUG_OUT=RTT                                                                      \
-	         -DOPT_SIGROK=1 -DOPT_MSC=0 -DOPT_CMSIS_DAPV1=0 -DOPT_CMSIS_DAPV2=0 -DOPT_TARGET_UART=1
+	         -DOPT_SIGROK=1 -DOPT_MSC=0 -DOPT_CMSIS_DAPV1=0 -DOPT_CMSIS_DAPV2=1 -DOPT_TARGET_UART=1
 
 
 .PHONY: cmake-create-debugger
@@ -331,3 +336,15 @@ cmake-create-debugger: clean-build
 	         $(CMAKE_FLAGS)                                                                                            \
 	         -DPICO_CLIB=newlib                                                                                        \
 	         -DOPT_NET= -DOPT_SIGROK=0 -DOPT_MSC=0
+
+
+.PHONY: benchmark-probe-rs
+benchmark-probe-rs:
+	probe-rs benchmark --protocol swd --address 0x20020000 --min-speed 1000 --max-speed 10000 --chip $(PICO_CHIPEE)
+
+
+# this is actually just a reminder for the probe-rs command line
+# "probe-rs gdb" does actually not run well under Eclipse(?)
+.PHONY: gdb-server-probe-rs
+gdb-server-probe-rs:
+	probe-rs gdb --chip rp2350 --gdb-connection-string 127.0.0.1:3333 --speed 9000 --protocol swd

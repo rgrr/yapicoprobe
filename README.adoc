@@ -134,28 +134,14 @@ Those settings are:
 |===
 |Tool | Parameter
 
-|pyOCD / CMSIS-DAPv2
-|DAP_PACKET_COUNT=2 +
-DAP_PACKET_SIZE=512
-
-|OpenOCD / CMSIS-DAPv2
-|DAP_PACKET_COUNT=1 +
-DAP_PACKET_SIZE=1024
-
-|probe-rs / CMSIS-DAPv2
-|DAP_PACKET_COUNT=2 +
-DAP_PACKET_SIZE=1024
-
-|unknown / CMSIS-DAPv2
-|DAP_PACKET_COUNT=1 +
+|CMSIS-DAPv2
+|DAP_PACKET_COUNT=16 +
 DAP_PACKET_SIZE=64
 
 |CMSIS-DAPv1 HID
 |DAP_PACKET_COUNT=1 +
 DAP_PACKET_SIZE=64
 |===
-
-For the adventurous both parameters are also user settable, see <<runtime-configuration>>.
 
 
 #### SWD Adapter Speed
@@ -370,9 +356,6 @@ Following procedure applies:
   `ram_end` | RAM start/end for generic target to override default 0x20000000..0x20040000.  This is mainly for
               RTT detection
 | `rtt`     | enable/disable RTT access, default is RTT enabled (0: disable, 1:enable)
-| `dap_psize` +
-  `dap_pcnt`| set `DAP_PACKET_SIZE` and `DAP_PACKET_COUNT`, see <<dap-optimization>>.  If only one of those values
-              is set, the other goes to a default (64/1)
 |====
 * special characters:
 ** CR/LF - end the line

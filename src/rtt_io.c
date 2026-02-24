@@ -714,8 +714,8 @@ void rtt_io_thread(void *ptr)
  * --> no RTT while DAP
  */
 {
-    static uint32_t rtt_cb = 0;
-    static bool rtt_cb_ok = false;
+    uint32_t rtt_cb = 0;
+    bool rtt_cb_ok = false;
     bool target_online = false;
 
     for (;;) {
@@ -892,7 +892,7 @@ void rtt_console_init(uint32_t task_prio)
     }
 #endif
 
-    timer_rtt_dap_interleave = xTimerCreate("RTT/DAP interleave timeout", pdMS_TO_TICKS(8), pdFALSE, NULL, rtt_cb_verify_timeout);
+    timer_rtt_dap_interleave = xTimerCreate("RTT/DAP interleave timeout", pdMS_TO_TICKS(8),   pdFALSE, NULL, rtt_cb_verify_timeout);
 
     xTaskCreate(rtt_io_thread, "RTT-IO", configMINIMAL_STACK_SIZE, NULL, task_prio, &task_rtt_console);
     if (task_rtt_console == NULL)
