@@ -87,19 +87,28 @@ static void swd_from_dormant(void)
  * Taken from RP2350 datasheet, "3.5.1 Connecting to the SW-DP"
  */
 {
-    printf("---swd_from_dormant()\n");
-
-    SWJ_SEQ(  8, {0xff});
-    SWJ_SEQ(128, {0x92, 0xf3, 0x09, 0x62, 0x95, 0x2d, 0x85, 0x86, 0xe9, 0xaf, 0xdd, 0xe3, 0xa2, 0x0e, 0xbc, 0x19});
-    SWJ_SEQ( 12, {0xa0, 0x01});
-    SWJ_SEQ( 54, {0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x07});
-
+    bool ok;
     uint32_t rv;
-    swd_read_dp(DP_IDCODE, &rv);
-//    printf("---  id(%u)=0x%08lx\n", core, rv);   // 0x4c013477 is the RP2350
+
+//    printf("---swd_from_dormant() - rp2350\n");
+
+    ok = swd_read_dp(DP_IDCODE, &rv);
+//    printf("---1  id(%d)=0x%08x %d\n", (int)core, (unsigned)rv, ok);   // 0x4c013477 is the RP2350
+
+    if ( !ok  ||  (rv & 0x0ff00ffe) != 0x0c000476) {
+//        printf("---swd_from_dormant() - rp2350 - execute\n");
+        SWJ_SEQ(  8, {0xff});
+        SWJ_SEQ(128, {0x92, 0xf3, 0x09, 0x62, 0x95, 0x2d, 0x85, 0x86, 0xe9, 0xaf, 0xdd, 0xe3, 0xa2, 0x0e, 0xbc, 0x19});
+        SWJ_SEQ( 12, {0xa0, 0x01});
+        SWJ_SEQ( 54, {0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x07});
+
+        swd_read_dp(DP_IDCODE, &rv);
+//        printf("---2  id(%d)=0x%08x\n", (int)core, (unsigned)rv);   // 0x4c013477 is the RP2350
+    }
 }   // swd_from_dormant
 
 
+static bool dp_core_select(uint8_t _core)
 /**
  * @brief Does the basic core select and then reads      as required
  *
@@ -107,7 +116,6 @@ static void swd_from_dormant(void)
  * @param _core
  * @return true -> ok
  */
-static bool dp_core_select(uint8_t _core)
 {
 //    printf("---dp_core_select(%u)\n", _core);
 
@@ -212,12 +220,12 @@ static void dump_rom_tables(uint32_t apsel, uint32_t offs, uint32_t len)
 #endif
 
 
+static bool dp_disable_breakpoints()
 /**
  * Disable HW breakpoints.
  * \pre
  *    DP must be powered on
  */
-static bool dp_disable_breakpoints()
 {
     return swd_write_word(FP_CTRL, FP_CTRL_KEY);
 }   // dp_disable_breakpoints
@@ -357,9 +365,9 @@ static bool rp2350_swd_init_debug(uint8_t core)
         CHECK_ABORT( swd_write_ap(AP_CSW, 1) );                                // force dap_state.csw to "0"
         CHECK_ABORT( swd_write_ap(AP_CSW, 0) );
 
-        CHECK_ABORT( swd_read_ap(AP_IDR, &tmp) );                                // AP IDR: must it be 0x34770008?
+        CHECK_ABORT( swd_read_ap(AP_IDR, &tmp) );                              // AP IDR: must it be 0x34770008?
 //        printf("##########1 0x%08lx\n", tmp);
-        CHECK_ABORT( swd_read_ap(AP_ROM, &tmp) );                                // AP ROM: must it be 0xe00ff003?
+        CHECK_ABORT( swd_read_ap(AP_ROM, &tmp) );                              // AP ROM: must it be 0xe00ff003?
 //        printf("##########2 0x%08lx\n", tmp);
         CHECK_ABORT( swd_write_dp(DP_SELECT, 0) );
 
@@ -380,6 +388,7 @@ static bool rp2350_swd_init_debug(uint8_t core)
 
 
 
+static bool rp2350_swd_set_target_state(uint8_t core, target_state_t state)
 /**
  * Set state of a single core, the core will be selected as well.
  * \return true -> ok
@@ -387,7 +396,6 @@ static bool rp2350_swd_init_debug(uint8_t core)
  * \note
  *    Not all cases are filled because they are actually never used.  So do not waste time there.
  */
-static bool rp2350_swd_set_target_state(uint8_t core, target_state_t state)
 {
     uint32_t val;
     int8_t ap_retries = 2;
@@ -537,22 +545,7 @@ static bool rp2350_swd_set_target_state(uint8_t core, target_state_t state)
 /*************************************************************************************************/
 
 
-#if 0
-static void rp2350_swd_set_target_reset(uint8_t asserted)
-/**
- * Hardware signal is not guaranteed to exist
- */
-{
-    extern void probe_reset_pin_set(uint32_t);
-
-    // set HW signal accordingly, asserted means "active"
-//    printf("----- rp2350_swd_set_target_reset(%d)\n", asserted);
-    probe_reset_pin_set(asserted ? 0 : 1);
-}   // rp2350_swd_set_target_reset
-#endif
-
-
-
+static uint8_t rp2350_target_set_state(target_state_t state)
 /**
  * Set state of the RP2350.
  * Currently core1 is held most of the time in HALT, so that it does not disturb operation.
@@ -561,11 +554,10 @@ static void rp2350_swd_set_target_reset(uint8_t asserted)
  *    - take care, that core0 is the selected core at end of function
  *    - not all cases are filled because they are actually never used.  So do not waste time there.
  */
-static uint8_t rp2350_target_set_state(target_state_t state)
 {
     uint8_t r = false;
 
-    printf("---------------------------------------------- rp2350_target_set_state(%d)\n", state);
+//    printf("---------------------------------------------- rp2350_target_set_state(%d)\n", state);
 
     switch (state) {
         case RESET_PROGRAM:
@@ -605,6 +597,22 @@ static uint8_t rp2350_target_set_state(target_state_t state)
 
 //----------------------------------------------------------------------------------------------------------------------
 
+
+#if 0
+static void rp2350_swd_set_target_reset(uint8_t asserted)
+/**
+ * Hardware signal is not guaranteed to exist
+ */
+{
+    extern void probe_reset_pin_set(uint32_t);
+
+    // set HW signal accordingly, asserted means "active"
+//    printf("----- rp2350_swd_set_target_reset(%d)\n", asserted);
+    probe_reset_pin_set(asserted ? 0 : 1);
+}   // rp2350_swd_set_target_reset
+#endif
+
+
 target_family_descriptor_t g_raspberry_rp2350_family = {
     .family_id                = TARGET_RP2350_FAMILY_ID,
 #if 0
@@ -615,5 +623,5 @@ target_family_descriptor_t g_raspberry_rp2350_family = {
     .swd_set_target_reset     = NULL,
 #endif
     .target_set_state         = &rp2350_target_set_state,
-    .apsel = 0x2d00
+    .apsel                    = 0x2d00
 };
