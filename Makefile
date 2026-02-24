@@ -260,9 +260,7 @@ debuggEE-flash-openocd:
 	# openocd does much faster flashing
 	$(OPENOCD) -s $(OPENOCD_S) -f interface/cmsis-dap.cfg -f target/$(PICO_CHIPEE).cfg                                 \
 	           -c "adapter speed 6000; adapter serial $(DEBUGGER_SERNO)"                                               \
-	           -c "program {$(BUILDEE_DIR)/$(PROJECT).hex}  verify; exit;"
-	# "pyocd reset" required to start
-	pyocd reset -t $(PICO_CHIPEE) -f 6M --probe $(DEBUGGER_SERNO)
+	           -c "program {$(BUILDEE_DIR)/$(PROJECT).hex}  verify reset exit"
 	@echo "ok."
 
 .PHONY: debuggEE-flash-probe-rs
@@ -296,7 +294,7 @@ debuggEE-reset:
 debuggEE-reset-openocd:
 	$(OPENOCD) -s $(OPENOCD_S) -f interface/cmsis-dap.cfg -f target/$(PICO_CHIPEE).cfg                                 \
 	           -c "adapter speed 6000; adapter serial $(DEBUGGER_SERNO)"                                               \
-	           -c "init; exit;"
+	           -c "init; reset run; exit;"
 
 .PHONY: debuggEE-reset-probe-rs
 debuggEE-reset-probe-rs:
