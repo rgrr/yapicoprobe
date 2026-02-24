@@ -95,7 +95,7 @@ static void swd_from_dormant(void)
     ok = swd_read_dp(DP_IDCODE, &rv);
 //    printf("---1  id(%d)=0x%08x %d\n", (int)core, (unsigned)rv, ok);   // 0x4c013477 is the RP2350
 
-    if ( !ok  ||  (rv & 0x0ff00ffe) != 0x0c000476) {
+    if ( !ok  ||  (rv & 0x0ff00ffe) != 0x0c000476) {      // TODO replace magic constants
 //        printf("---swd_from_dormant() - rp2350 - execute\n");
         SWJ_SEQ(  8, {0xff});
         SWJ_SEQ(128, {0x92, 0xf3, 0x09, 0x62, 0x95, 0x2d, 0x85, 0x86, 0xe9, 0xaf, 0xdd, 0xe3, 0xa2, 0x0e, 0xbc, 0x19});
@@ -125,7 +125,7 @@ static bool dp_core_select(uint8_t _core)
 
     g_raspberry_rp2350_family.apsel = 0x2d00;       // TODO where from is this xd00 ?  taken from openocd
     if (_core == 1) {
-        g_raspberry_rp2350_family.apsel = 0x4d00;
+        g_raspberry_rp2350_family.apsel = 0x4d00;       // TODO replace magic constants
     }
 
 #if 0

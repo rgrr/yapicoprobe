@@ -73,10 +73,12 @@ static void swd_from_dormant(void)
  * Leave dormant state according to ADIv5 B5.3.4
  *
  * Sequence is taken from probe-rs and pyocd.  Sometimes the rp2040 goes into a state (rescue DP is seen, but TARGETSEL
- * does not work), where it cannot be recovered from.
+ * does not work), where it cannot be recovered from.  This situation is handled in dp_core_select()
  */
 {
-    printf("---swd_from_dormant()\n");
+//    printf("---swd_from_dormant() - rp2040\n");
+
+    // TODO make this only if the DP is really dormant (like rp2350)
 
     SWJ_SEQ( 51, {0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x07});
     SWJ_SEQ( 31, {0xba, 0xbb, 0xbb, 0x33});
@@ -151,7 +153,7 @@ static bool dp_core_select(uint8_t _core)
     rr = swd_read_dp(DP_IDCODE, &rv);
 //    printf("--1  id(%u)=0x%08lx %d\n", _core, rv, rr);
 
-    if (rr  &&  rv == 0x10212927)
+    if (rr  &&  rv == 0x10212927)   // multidrop mode   // TODO replace magic constants
     {
         //
         // -> cannot select core
@@ -196,7 +198,7 @@ static bool dp_core_select(uint8_t _core)
     }
 
     CHECK_OK_BOOL(swd_read_dp(DP_IDCODE, &rv));
-    printf("--2  id(%u)=0x%08lx\n", _core, rv);   // 0x0bc12477 is the RP2040
+//    printf("--2  id(%d)=0x%08x\n", (int)_core, (unsigned)rv);   // 0x0bc12477 is the RP2040
 
     core = _core;
     return true;
@@ -307,7 +309,7 @@ static bool rp2040_swd_set_target_state(uint8_t core, target_state_t state)
     uint32_t val;
     int8_t ap_retries = 2;
 
-    printf("+++++++++++++++ rp2040_swd_set_target_state(%d, %d)\n", core, state);
+//    printf("+++++++++++++++ rp2040_swd_set_target_state(%d, %d)\n", core, state);
 
 //    dp_core_select(core);
 
@@ -451,22 +453,6 @@ static bool rp2040_swd_set_target_state(uint8_t core, target_state_t state)
 /*************************************************************************************************/
 
 
-#if 0
-static void rp2040_swd_set_target_reset(uint8_t asserted)
-/**
- * Hardware signal is not guaranteed to exist
- */
-{
-    extern void probe_reset_pin_set(uint32_t);
-
-    // set HW signal accordingly, asserted means "active"
-    printf("----- rp2040_swd_set_target_reset(%d)\n", asserted);
-    probe_reset_pin_set(asserted ? 0 : 1);
-}   // rp2040_swd_set_target_reset
-#endif
-
-
-
 static uint8_t rp2040_target_set_state(target_state_t state)
 /**
  * Set state of the RP2040.
@@ -481,7 +467,7 @@ static uint8_t rp2040_target_set_state(target_state_t state)
 {
     uint8_t r = false;
 
-    printf("----- rp2040_target_set_state(%d)\n", state);
+//    printf("----- rp2040_target_set_state(%d)\n", state);
 
     switch (state) {
         case RESET_PROGRAM:
@@ -515,13 +501,29 @@ static uint8_t rp2040_target_set_state(target_state_t state)
             break;
     }
 
-    printf("----- rp2040_target_set_state(%d) = %d\n", state, r);
+//    printf("----- rp2040_target_set_state(%d) = %d\n", state, r);
 
     return r;
 }   // rp2040_target_set_state
 
 
 //----------------------------------------------------------------------------------------------------------------------
+
+
+#if 0
+static void rp2040_swd_set_target_reset(uint8_t asserted)
+/**
+ * Hardware signal is not guaranteed to exist
+ */
+{
+    extern void probe_reset_pin_set(uint32_t);
+
+    // set HW signal accordingly, asserted means "active"
+    printf("----- rp2040_swd_set_target_reset(%d)\n", asserted);
+    probe_reset_pin_set(asserted ? 0 : 1);
+}   // rp2040_swd_set_target_reset
+#endif
+
 
 const target_family_descriptor_t g_raspberry_rp2040_family = {
     .family_id                = TARGET_RP2040_FAMILY_ID,

@@ -880,7 +880,7 @@ void rtt_sysview_send_byte(uint8_t ch)
 static void rtt_cb_console_redetect(TimerHandle_t xTimer)
 {
     // TODO implement
-    printf("yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy\n");
+//    printf("yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy\n");
 //    rtt_cb_active = 0;
 //    rtt_cb_redetect = true;
 }   // rtt_cb_console_redetect
