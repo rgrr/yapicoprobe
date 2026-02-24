@@ -762,8 +762,6 @@ static void HandleDapConnectDisconnect(const uint8_t *cmd, uint32_t cmdlen)
             picoprobe_info("=================================== DAPv2 disconnect target\n");
             led_state(LS_DAPV2_DISCONNECTED);
             sw_unlock(E_SWLOCK_DAPV2);
-
-            rtt_console_redetect();
         }
     }
 }   // HandleDapConnectDisconnect

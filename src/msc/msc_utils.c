@@ -99,7 +99,7 @@ static void target_disconnect(TimerHandle_t xTimer)
             picoprobe_info("=================================== MSC disconnect target: %d bytes transferred, %d bytes/s\n",
                            (int)transferred_bytes, (int)t_bps);
             led_state(LS_MSC_DISCONNECTED);
-            //if (had_write)                 // TODO not sure here
+            if (had_write)
             {
                 if (USE_RP2040()) {
                 }
@@ -110,7 +110,6 @@ static void target_disconnect(TimerHandle_t xTimer)
                 }
                 target_set_state(RESET_PROGRAM);
                 target_set_state(RESET_RUN);
-                rtt_console_redetect();
             }
             is_connected = false;
         }
