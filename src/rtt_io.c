@@ -75,6 +75,15 @@ typedef struct {                                                      // see SEG
     int                     MaxNumDownBuffers;                        // Initialized to SEGGER_RTT_MAX_NUM_DOWN_BUFFERS (type. 2)
 } EXT_SEGGER_RTT_CB_HEADER;
 
+typedef enum {
+    E_RTT_CB_INIT,
+    E_RTT_CB_WAIT_TARGET,
+    E_RTT_CB_SEARCH,
+    E_RTT_CB_FOUND,
+    E_RTT_CB_ACTIVE,
+    E_RTT_CB_TARGET_LOST,
+} E_RTT_CB;
+
 #define TARGET_RAM_START        (g_board_info.target_cfg->ram_regions[0].start)
 #define TARGET_RAM_END          (g_board_info.target_cfg->ram_regions[0].end)
 
@@ -94,6 +103,8 @@ static EXT_SEGGER_RTT_CB_HEADER rtt_cb_header = {0};
 static bool                     rtt_console_running = false;
 static bool                     ok_console_from_target = false;
 static bool                     ok_console_to_target = false;
+
+static E_RTT_CB                 state_rtt_cb_detection = E_RTT_CB_INIT;
 
 static TaskHandle_t             task_rtt_console = NULL;
 static TaskHandle_t             task_rtt_from_target_thread = NULL;
@@ -687,7 +698,121 @@ static void rtt_print_target_info(void)
 
 
 
+static void rtt_state_machine(void)
+/**
+ * \pre
+ *    possessing E_SWLOCK_RTT
+ */
+{
+    static uint32_t rtt_cb;
+    static bool     rtt_cb_ok;
+
+    if (state_rtt_cb_detection == E_RTT_CB_INIT) {
+        state_rtt_cb_detection = E_RTT_CB_WAIT_TARGET;
+    }
+
+    if (state_rtt_cb_detection == E_RTT_CB_WAIT_TARGET) {
+        led_state(LS_NO_TARGET);
+
+        //
+        // try to detect target
+        //
+        if (g_board_info.prerun_board_config != NULL) {
+            g_board_info.prerun_board_config();
+        }
+
+        if (g_board_info.target_cfg->rt_board_id != NULL) {
+            rtt_print_target_info();
+
+            rtt_cb = 0;
+
+            picoprobe_info("searching RTT_CB in 0x%08x..0x%08x, prev: 0x%08x\n",
+                           (unsigned)TARGET_RAM_START, (unsigned)(TARGET_RAM_END - 1), (unsigned)rtt_cb);
+
+            state_rtt_cb_detection = E_RTT_CB_SEARCH;
+        }
+    }
+
+    if (state_rtt_cb_detection == E_RTT_CB_SEARCH) {
+        led_state(LS_TARGET_FOUND);
+
+        if ( !target_connect()) {
+            state_rtt_cb_detection = E_RTT_CB_TARGET_LOST;
+        }
+        else {
+            uint32_t prev_rtt_cb = rtt_cb;
+            if ( !search_for_rtt_cb( &rtt_cb))
+            {
+                // -> no RTT_CB in memory
+                if (rtt_cb_ok) {
+                    rtt_cb_ok = false;
+                    picoprobe_info("---- no RTT_CB found\n");
+                }
+                led_state(LS_TARGET_FOUND);
+            }
+            else
+            {
+                // RTT_CB found
+                if (rtt_cb != prev_rtt_cb) {
+                    rtt_cb_ok = true;
+                    picoprobe_info("---- RTT_CB found at 0x%x\n", (unsigned)rtt_cb);
+                    state_rtt_cb_detection = E_RTT_CB_FOUND;                }
+            }
+
+            target_disconnect();
+        }
+    }
+
+    if (state_rtt_cb_detection == E_RTT_CB_FOUND) {
+        led_state(LS_RTT_CB_FOUND);
+
+        if ( !target_connect()) {
+            state_rtt_cb_detection = E_RTT_CB_TARGET_LOST;
+        }
+        else {
+            do_rtt_io(rtt_cb);
+
+            target_disconnect();
+        }
+    }
+
+    if (state_rtt_cb_detection == E_RTT_CB_ACTIVE) {
+        led_state(LS_RTT_CB_FOUND);
+
+        if ( !target_connect()) {
+            state_rtt_cb_detection = E_RTT_CB_TARGET_LOST;
+        }
+        else {
+            do_rtt_io(rtt_cb);
+
+            target_disconnect();
+        }
+    }
+
+    if (state_rtt_cb_detection == E_RTT_CB_TARGET_LOST) {
+        picoprobe_info("=================================== Target lost\n");
+        state_rtt_cb_detection = E_RTT_CB_INIT;
+    }
+}   // rtt_state_machine
+
+
+
 void rtt_io_thread(void *ptr)
+{
+    for (;;) {
+        sw_lock(E_SWLOCK_RTT);
+        // post: we have the interface
+
+        rtt_state_machine();
+
+        sw_unlock(E_SWLOCK_RTT);
+        vTaskDelay(pdMS_TO_TICKS(100));            // give the other tasks the opportunity to catch sw_lock();
+    }
+}   // rtt_io_thread
+
+
+
+void rtt_io_thread_old(void *ptr)
 /**
  * Do RTT input/output for console and SystemView.
  *
@@ -761,7 +886,7 @@ void rtt_io_thread(void *ptr)
         }
 #else
         if (dap_is_connected()) {
-            picoprobe_error("RTT WHILE DEBUGGING SEEMS TO BE DISABLED.  WE SHOULD NEVER ARRIVEE HERE.\n");
+            picoprobe_error("RTT WHILE DEBUGGING SEEMS TO BE DISABLED.  WE SHOULD NEVER ARRIVE HERE.\n");
             vTaskDelay(pdMS_TO_TICKS(100));
             sw_unlock(E_SWLOCK_RTT);
             continue;
