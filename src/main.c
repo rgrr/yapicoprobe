@@ -35,6 +35,7 @@
 #if OPT_PROBE_DEBUG_OUT_RTT
     #include "pico/stdio/driver.h"
 #endif
+#include "pico/multicore.h"
 
 #include <stdio.h>
 #include <stdbool.h>
@@ -521,6 +522,12 @@ void usb_thread(void *ptr)
 
 int main(void)
 {
+#if configNUMBER_OF_CORES != 2
+    // this is actually just for debugging the probe firmware running with just one core (good for pyocd)
+    // allow to run TIMER0 even in debug pause which would otherwise be inhibited because TIMER0.DBGPAUSE=7
+    multicore_reset_core1();
+#endif
+
     board_init();
     tusb_init();
     ini_init();                              // for debugging this must be moved below cdc_debug_init()
