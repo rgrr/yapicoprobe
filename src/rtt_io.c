@@ -698,6 +698,9 @@ static void rtt_print_target_info(void)
 
 
 
+#define NEW_RTT   1
+
+
 static void rtt_state_machine(void)
 /**
  * \pre
@@ -764,15 +767,22 @@ static void rtt_state_machine(void)
     }
 
     if (state_rtt_cb_detection == E_RTT_CB_FOUND) {
-        led_state(LS_RTT_CB_FOUND);
-
-        if ( !target_connect()) {
-            state_rtt_cb_detection = E_RTT_CB_TARGET_LOST;
+        if (dap_is_connected()) {
+            do {
+                do_rtt_io(rtt_cb);
+            } while ( !sw_unlock_requested()  &&  is_target_ok(0));
         }
         else {
-            do_rtt_io(rtt_cb);
+            led_state(LS_RTT_CB_FOUND);
 
-            target_disconnect();
+            if ( !target_connect()) {
+                state_rtt_cb_detection = E_RTT_CB_TARGET_LOST;
+            }
+            else {
+                do_rtt_io(rtt_cb);
+
+                target_disconnect();
+            }
         }
     }
 
@@ -800,13 +810,21 @@ static void rtt_state_machine(void)
 void rtt_io_thread(void *ptr)
 {
     for (;;) {
+        printf("!!!!!!!!!!!!!!!!!!!!!! 3\n");
         sw_lock(E_SWLOCK_RTT);
+        printf("!!!!!!!!!!!!!!!!!!!!!! 4\n");
+
         // post: we have the interface
+
+//        vTaskDelay(pdMS_TO_TICKS(100));            // give the target some time for startup
 
         rtt_state_machine();
 
         sw_unlock(E_SWLOCK_RTT);
-        vTaskDelay(pdMS_TO_TICKS(100));            // give the other tasks the opportunity to catch sw_lock();
+
+        if ( !dap_is_connected()) {
+            vTaskDelay(pdMS_TO_TICKS(100));            // give the other tasks the opportunity to catch sw_lock();
+        }
     }
 }   // rtt_io_thread
 
@@ -853,8 +871,11 @@ void rtt_io_thread_old(void *ptr)
             }
         }
 
+        printf("!!!!!!!!!!!!!!!!!!!!!! 1\n");
         sw_lock(E_SWLOCK_RTT);
         // post: we have the interface
+        printf("!!!!!!!!!!!!!!!!!!!!!! 2\n");
+
 
 #if OPT_RTT_WHILE_DEBUGGING  // EXPERIMENTAL FEATURE
         if (dap_is_connected()) {
@@ -1019,7 +1040,12 @@ void rtt_console_init(uint32_t task_prio)
 
     timer_rtt_dap_interleave = xTimerCreate("RTT/DAP interleave timeout", pdMS_TO_TICKS(8),   pdFALSE, NULL, rtt_cb_verify_timeout);
 
+#if NEW_RTT
     xTaskCreate(rtt_io_thread, "RTT-IO", configMINIMAL_STACK_SIZE, NULL, task_prio, &task_rtt_console);
+#else
+    xTaskCreate(rtt_io_thread_old, "RTT-IO", configMINIMAL_STACK_SIZE, NULL, task_prio, &task_rtt_console);
+#endif
+
     if (task_rtt_console == NULL)
     {
         picoprobe_error("rtt_console_init: cannot create task_rtt_console\n");
