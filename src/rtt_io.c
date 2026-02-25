@@ -700,6 +700,43 @@ static void rtt_print_target_info(void)
 
 #define NEW_RTT   1
 
+#if !OPT_RTT_WHILE_DEBUGGING
+    #define dap_is_connected()     false
+#endif
+
+static uint32_t rtt_cb;
+static bool     rtt_cb_ok;
+
+
+
+static void rtt_while_debugging(void)
+/**
+ * Do RTT while debugging until a DAP command arrives
+ * Note that dap_is_connected() must be caught here, because the code downwards disturbs debugging
+ */
+{
+    do {
+        uint32_t prev_rtt_cb;
+
+        prev_rtt_cb = rtt_cb;
+        if ( !search_for_rtt_cb( &rtt_cb)) {
+            if (rtt_cb_ok) {
+                rtt_cb_ok = false;
+                picoprobe_info("---- no RTT_CB found (RTT during DAP)\n");
+            }
+            break;
+        }
+
+        if (rtt_cb != prev_rtt_cb) {
+            rtt_cb_ok = true;
+            picoprobe_info("---- RTT_CB found at 0x%x (RTT during DAP)\n", (unsigned)rtt_cb);
+        }
+
+        do_rtt_io(rtt_cb);
+    } while ( !sw_unlock_requested()  &&  is_target_ok(0));
+}   // rtt_while_debugging
+
+
 
 static void rtt_state_machine(void)
 /**
@@ -707,9 +744,6 @@ static void rtt_state_machine(void)
  *    possessing E_SWLOCK_RTT
  */
 {
-    static uint32_t rtt_cb;
-    static bool     rtt_cb_ok;
-
     if (state_rtt_cb_detection == E_RTT_CB_INIT) {
         state_rtt_cb_detection = E_RTT_CB_WAIT_TARGET;
     }
@@ -759,7 +793,8 @@ static void rtt_state_machine(void)
                 if (rtt_cb != prev_rtt_cb) {
                     rtt_cb_ok = true;
                     picoprobe_info("---- RTT_CB found at 0x%x\n", (unsigned)rtt_cb);
-                    state_rtt_cb_detection = E_RTT_CB_FOUND;                }
+                    state_rtt_cb_detection = E_RTT_CB_FOUND;
+                }
             }
 
             target_disconnect();
@@ -767,22 +802,15 @@ static void rtt_state_machine(void)
     }
 
     if (state_rtt_cb_detection == E_RTT_CB_FOUND) {
-        if (dap_is_connected()) {
-            do {
-                do_rtt_io(rtt_cb);
-            } while ( !sw_unlock_requested()  &&  is_target_ok(0));
+        led_state(LS_RTT_CB_FOUND);
+
+        if ( !target_connect()) {
+            state_rtt_cb_detection = E_RTT_CB_TARGET_LOST;
         }
         else {
-            led_state(LS_RTT_CB_FOUND);
+            do_rtt_io(rtt_cb);
 
-            if ( !target_connect()) {
-                state_rtt_cb_detection = E_RTT_CB_TARGET_LOST;
-            }
-            else {
-                do_rtt_io(rtt_cb);
-
-                target_disconnect();
-            }
+            target_disconnect();
         }
     }
 
@@ -810,20 +838,19 @@ static void rtt_state_machine(void)
 void rtt_io_thread(void *ptr)
 {
     for (;;) {
-        printf("!!!!!!!!!!!!!!!!!!!!!! 3\n");
+        printf("!!!!!!!!!!!!!!!!!!!!!! x %d %d 0x%08x\n", state_rtt_cb_detection, rtt_cb_ok, rtt_cb);
         sw_lock(E_SWLOCK_RTT);
-        printf("!!!!!!!!!!!!!!!!!!!!!! 4\n");
-
+        printf("!!!!!!!!!!!!!!!!!!!!!! y %d %d 0x%08x\n", state_rtt_cb_detection, rtt_cb_ok, rtt_cb);
         // post: we have the interface
 
-//        vTaskDelay(pdMS_TO_TICKS(100));            // give the target some time for startup
-
-        rtt_state_machine();
-
-        sw_unlock(E_SWLOCK_RTT);
-
         if ( !dap_is_connected()) {
+            rtt_state_machine();
+            sw_unlock(E_SWLOCK_RTT);
             vTaskDelay(pdMS_TO_TICKS(100));            // give the other tasks the opportunity to catch sw_lock();
+        }
+        else {
+            rtt_while_debugging();
+            sw_unlock(E_SWLOCK_RTT);
         }
     }
 }   // rtt_io_thread
