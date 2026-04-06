@@ -679,6 +679,17 @@ static bool target_connect(void)
 
 
 
+static bool target_check_connection(void)
+{
+    bool r;
+    uint8_t data;
+
+    r = swd_read_byte(TARGET_RAM_START, &data);
+    return r;
+}   // target_check_connection
+
+
+
 static void target_disconnect(void)
 {
 //    picoprobe_debug("=================================== RTT disconnect target\n");
@@ -784,7 +795,12 @@ static void rtt_state_machine(void)
             picoprobe_info("searching RTT_CB in 0x%08x..0x%08x, prev: 0x%08x\n",
                            (unsigned)TARGET_RAM_START, (unsigned)(TARGET_RAM_END - 1), (unsigned)rtt_cb);
 
+            if (target_connect()) {
             state_rtt_cb_detection = E_RTT_CB_SEARCHING;
+            }
+            else {
+                state_rtt_cb_detection = E_RTT_CB_TARGET_LOST;
+            }
         }
     }
 
@@ -794,7 +810,7 @@ static void rtt_state_machine(void)
         //
         led_state(LS_TARGET_FOUND);
 
-        if ( !target_connect()) {
+        if ( !target_check_connection()) {
             state_rtt_cb_detection = E_RTT_CB_TARGET_LOST;
         }
         else {
@@ -825,7 +841,7 @@ static void rtt_state_machine(void)
         //
         led_state(LS_RTT_CB_FOUND);
 
-        if ( !target_connect()) {
+        if ( !target_check_connection()) {
             state_rtt_cb_detection = E_RTT_CB_TARGET_LOST;
         }
         else {
