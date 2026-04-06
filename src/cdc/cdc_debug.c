@@ -283,6 +283,8 @@ static void cdc_debug_command_if(uint8_t ch)
                     printf("   %s\n", minini_varnames[ndx]);
                 }
                 printf("-------------\n");
+                printf("Uptime: %lds\n", (long)(time_us_64() / 1000000));
+                printf("-------------\n");
             }
             else {
                 picoprobe_error("unknown cmd: '%s' (use 'help') -> locked\n", cmd);
