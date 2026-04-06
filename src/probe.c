@@ -97,9 +97,12 @@ void probe_set_cpu_freq_khz(uint32_t freq_khz)
     }
 
 #if PICO_RP2040
-    if (freq_khz >= 150 * 1000) {
-        // increase voltage on higher frequencies
+    // increase voltage on higher frequencies ((almost) taken from https://github.com/Sima214/yapicoprobe)
+    if (freq_khz > 200 * 1000) {
         vreg_set_voltage(VREG_VOLTAGE_1_20);
+    }
+    else if (freq_khz >= 133 * 1000) {
+        vreg_set_voltage(VREG_VOLTAGE_1_15);
     }
 #endif
 
