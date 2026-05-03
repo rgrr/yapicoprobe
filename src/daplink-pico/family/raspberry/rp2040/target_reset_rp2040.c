@@ -320,14 +320,22 @@ static bool rp2040_swd_set_target_state(uint8_t core, target_state_t state)
 
     switch (state) {
         case RESET_RUN:
-            // TODO what should be done here actually?
             if ( !rp2040_swd_init_debug(core)) {
                 return false;
             }
 
-            swd_set_target_reset(1);
-            osDelay(2);
-            swd_set_target_reset(0);
+            // Use software reset (SYSRESETREQ) instead of hardware reset.
+            // The RP2040 family sets swd_set_target_reset=NULL, so calling
+            // swd_set_target_reset() falls back to PIN_nRESET_OUT which drives the
+            // RST/RUN pin (GPIO6) LOW, holding the DUT in reset indefinitely and
+            // blocking external debugger connections.  SYSRESETREQ is consistent with
+            // default_reset_type=kSoftwareReset in the RP2040 family descriptor.
+            {
+                uint32_t aircr;
+                if (swd_read_word(NVIC_AIRCR, &aircr)) {
+                    swd_write_word(NVIC_AIRCR, VECTKEY | (aircr & SCB_AIRCR_PRIGROUP_Msk) | soft_reset);
+                }
+            }
             osDelay(2);
 
             // Power down
