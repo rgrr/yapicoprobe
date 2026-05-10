@@ -324,18 +324,9 @@ static bool rp2040_swd_set_target_state(uint8_t core, target_state_t state)
                 return false;
             }
 
-            // Use software reset (SYSRESETREQ) instead of hardware reset.
-            // The RP2040 family sets swd_set_target_reset=NULL, so calling
-            // swd_set_target_reset() falls back to PIN_nRESET_OUT which drives the
-            // RST/RUN pin (GPIO6) LOW, holding the DUT in reset indefinitely and
-            // blocking external debugger connections.  SYSRESETREQ is consistent with
-            // default_reset_type=kSoftwareReset in the RP2040 family descriptor.
-            {
-                uint32_t aircr;
-                if (swd_read_word(NVIC_AIRCR, &aircr)) {
-                    swd_write_word(NVIC_AIRCR, VECTKEY | (aircr & SCB_AIRCR_PRIGROUP_Msk) | soft_reset);
-                }
-            }
+            swd_set_target_reset(1);
+            osDelay(2);
+            swd_set_target_reset(0);
             osDelay(2);
 
             // Power down
@@ -518,29 +509,31 @@ static uint8_t rp2040_target_set_state(target_state_t state)
 //----------------------------------------------------------------------------------------------------------------------
 
 
-#if 0
 static void rp2040_swd_set_target_reset(uint8_t asserted)
 /**
- * Hardware signal is not guaranteed to exist
+ * Reset RP2040 with its own procedure.  As a last resort use hardware reset via dedicated pins.
  */
 {
-    extern void probe_reset_pin_set(uint32_t);
+//    printf("----- rp2040_swd_set_target_reset(%d)\n", asserted);
 
-    // set HW signal accordingly, asserted means "active"
-    printf("----- rp2040_swd_set_target_reset(%d)\n", asserted);
-    probe_reset_pin_set(asserted ? 0 : 1);
+    if (asserted) {
+        uint32_t aircr;
+
+        if (swd_read_word(NVIC_AIRCR, &aircr)) {
+            swd_write_word(NVIC_AIRCR, VECTKEY | (aircr & SCB_AIRCR_PRIGROUP_Msk) | soft_reset);
+        }
+    }
+
+    if (g_board_info.swd_set_target_reset){
+        g_board_info.swd_set_target_reset(asserted);
+    }
 }   // rp2040_swd_set_target_reset
-#endif
 
 
 const target_family_descriptor_t g_raspberry_rp2040_family = {
     .family_id                = TARGET_RP2040_FAMILY_ID,
-#if 0
-    .swd_set_target_reset     = &rp2040_swd_set_target_reset,
-#else
     .default_reset_type       = kSoftwareReset,
     .soft_reset_type          = SYSRESETREQ,
-    .swd_set_target_reset     = NULL,
-#endif
+    .swd_set_target_reset     = &rp2040_swd_set_target_reset,
     .target_set_state         = &rp2040_target_set_state,
 };
