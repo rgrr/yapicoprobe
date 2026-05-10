@@ -20,7 +20,7 @@ pico_board_cmake_set(PICO_PLATFORM, rp2040)
 #ifdef OPT_MCU_FORCE_CLOCK_MHZ
     #define PROBE_CPU_CLOCK_MHZ  OPT_MCU_FORCE_CLOCK_MHZ
 #else
-    #define PROBE_CPU_CLOCK_MHZ  192
+    #define PROBE_CPU_CLOCK_MHZ  144
 #endif
 #define PROBE_CPU_CLOCK_MIN_MHZ  (5 * 24)
 #define PROBE_CPU_CLOCK_MAX_MHZ  (12 * 24)
