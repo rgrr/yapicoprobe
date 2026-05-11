@@ -92,11 +92,12 @@ cmake-create-debug: clean-build
 
 
 
+# ATTENTION: newlib no longer links (but debug does) 
 .PHONY: cmake-create-release
 cmake-create-release: clean-build
 	cmake -B $(BUILD_DIR) -G Ninja -DCMAKE_BUILD_TYPE=Release -DPICO_BOARD=$(PICO_BOARD)                               \
 	      $(if $(OPT_SIGROK),-DOPT_SIGROK=$(OPT_SIGROK))                                                               \
-	      -DPICO_CLIB=newlib                                                                                           \
+	      -DPICO_CLIB=picolibc                                                                                         \
 	      $(CMAKE_FLAGS)
 
 
