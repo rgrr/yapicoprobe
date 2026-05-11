@@ -53,7 +53,7 @@ static ssi_hw_t *const ssi = (ssi_hw_t *) XIP_SSI_BASE;
 
 // Sanity check
 #undef static_assert
-#define static_assert(cond, x) extern int static_assert[(cond)?1:-1]
+#define static_assert(cond, x) extern int __CONCAT(static_assert,__LINE__)[(cond)?1:-1]
 check_hw_layout(ssi_hw_t, ssienr, SSI_SSIENR_OFFSET);
 check_hw_layout(ssi_hw_t, spi_ctrlr0, SSI_SPI_CTRLR0_OFFSET);
 
