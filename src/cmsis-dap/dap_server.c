@@ -697,8 +697,9 @@ void tud_hid_set_report_cb(uint8_t itf, uint8_t report_id, hid_report_type_t rep
         picoprobe_info_out("\n");
 #else
         uint32_t res = DAP_ExecuteCommand(RxDataBuffer, TxDataBuffer);
+	(void) res;
 #endif
-        tud_hid_report(0, TxDataBuffer, res & 0xffff);
+        tud_hid_report(0, TxDataBuffer, _DAP_PACKET_SIZE_HID);
     }
 }   // tud_hid_set_report_cb
 #endif
