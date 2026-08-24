@@ -571,6 +571,7 @@ int main(void)
                    "UNKNOWN\n");
 #endif
     picoprobe_info("PICO-SDK:   " PICO_SDK_VERSION_STRING "\n");
+    picoprobe_info("FreeRTOS:   " tskKERNEL_VERSION_NUMBER "\n");
     picoprobe_info("TinyUSB:    " TUSB_VERSION_STRING "\n");
     picoprobe_info("CMSIS-DAP:  " DAP_FW_VER "\n");
     picoprobe_info("++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++\n");
@@ -590,7 +591,12 @@ void vApplicationTickHook (void)
 
 
 
-void vApplicationStackOverflowHook(TaskHandle_t Task, char *pcTaskName)
+void __attribute__((weak)) vApplicationStackOverflowHook(TaskHandle_t Task, char *pcTaskName)
+/**
+ * Stack overflow from FreeRTOS.
+ * Note that newer versions of TinyUSB define this function on their own for whatever reasons
+ * so it has to be defined "weak"
+ */
 {
     panic("stack overflow (not the helpful kind) for %s\n", *pcTaskName);
 }
