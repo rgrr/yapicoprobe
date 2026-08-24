@@ -4,7 +4,7 @@
 #
 VERSION_MAJOR        := 2
 VERSION_MINOR        := 2
-VERSION_PATCH        := 4
+VERSION_PATCH        := 6
 
 BUILD_DIR            := _build
 BUILDEE_DIR          := _buildee
@@ -87,7 +87,7 @@ details: all
 cmake-create-debug: clean-build
 	cmake -B $(BUILD_DIR) -G Ninja -DCMAKE_BUILD_TYPE=Debug -DPICO_BOARD=$(PICO_BOARD)                                 \
 	      $(if $(OPT_SIGROK),-DOPT_SIGROK=$(OPT_SIGROK))                                                               \
-	      -DPICO_CLIB=newlib                                                                                           \
+	      -DPICO_CLIB=                                                                                                 \
 	      $(CMAKE_FLAGS)
 
 
@@ -122,7 +122,7 @@ cmake-create-debug-clang: clean-build
 	export PICO_TOOLCHAIN_PATH=~/bin/llvm-arm-none-eabi/bin;                                                           \
 	cmake -B $(BUILD_DIR) -G Ninja -DCMAKE_BUILD_TYPE=Debug -DPICO_BOARD=$(PICO_BOARD)                                 \
 	         $(if $(OPT_SIGROK),-DOPT_SIGROK=$(OPT_SIGROK))                                                            \
- 	         -DPICO_CLIB=newlib                                                                                        \
+ 	         -DPICO_CLIB=                                                                                              \
 	         -DPICO_COMPILER=pico_arm_clang                                                                            \
 	         $(CMAKE_FLAGS)
 
@@ -132,7 +132,7 @@ cmake-create-release-clang: clean-build
 	export PICO_TOOLCHAIN_PATH=~/bin/llvm-arm-none-eabi/bin;                                                           \
 	cmake -B $(BUILD_DIR) -G Ninja -DCMAKE_BUILD_TYPE=Release -DPICO_BOARD=$(PICO_BOARD)                               \
 	         $(if $(OPT_SIGROK),-DOPT_SIGROK=$(OPT_SIGROK))                                                            \
-	         -DPICO_CLIB=newlib                                                                                        \
+	         -DPICO_CLIB=                                                                                              \
 	         -DPICO_COMPILER=pico_arm_clang                                                                            \
 	         $(CMAKE_FLAGS)
 
@@ -142,7 +142,7 @@ cmake-create-minsizerel-clang: clean-build
 	export PICO_TOOLCHAIN_PATH=~/bin/llvm-arm-none-eabi/bin;                                                           \
 	cmake -B $(BUILD_DIR) -G Ninja -DCMAKE_BUILD_TYPE=MinSizeRel -DPICO_BOARD=$(PICO_BOARD)                            \
 	         $(if $(OPT_SIGROK),-DOPT_SIGROK=$(OPT_SIGROK))                                                            \
-	         -DPICO_CLIB=newlib                                                                                        \
+	         -DPICO_CLIB=                                                                                              \
 	         -DPICO_COMPILER=pico_arm_clang                                                                            \
 	         $(CMAKE_FLAGS) 
 
