@@ -27,6 +27,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <string.h>
 
 #include <pico/stdlib.h>
 
@@ -275,7 +276,25 @@
     static uint8_t TxDataBuffer[_DAP_PACKET_SIZE_HID];
 #endif
 
+static uint32_t dap_execute_command(const uint8_t *request, uint8_t *response, const char *product_str)
+/**
+ * Execute a DAP command and, for DAP_Info(Product ID) requests, overwrite the
+ * product string in the response.  This allows host tools to distinguish the
+ * CMSIS-DAPv1 and CMSIS-DAPv2 interfaces of the probe.
+ */
+{
+    uint32_t res = DAP_ExecuteCommand(request, response);
 
+    if (product_str != NULL  &&  request[0] == ID_DAP_Info  &&  request[1] == DAP_ID_PRODUCT) {
+        uint32_t len = (uint32_t)strlen(product_str) + 1;   // include trailing zero
+
+        response[0] = ID_DAP_Info;
+        response[1] = (uint8_t)len;
+        memcpy(response + 2, product_str, len);
+        res = (res & 0xffff0000) | (len + 2);
+    }
+    return res;
+}
 
 #if OPT_CMSIS_DAPV2  &&  !defined(NEW_DAP)
 
@@ -696,8 +715,8 @@ void tud_hid_set_report_cb(uint8_t itf, uint8_t report_id, hid_report_type_t rep
         }
         picoprobe_info_out("\n");
 #else
-        uint32_t res = DAP_ExecuteCommand(RxDataBuffer, TxDataBuffer);
-	(void) res;
+        uint32_t res = dap_execute_command(RxDataBuffer, TxDataBuffer, "YAPicoprobe CMSIS-DAP v1");
+        (void) res;
 #endif
         tud_hid_report(0, TxDataBuffer, _DAP_PACKET_SIZE_HID);
     }
@@ -1035,7 +1054,7 @@ void dap_thread(void *ptr)
             // execute DAP request
             //
             HandleDapConnectDisconnect(RD_SLOT_PTR(requestQueue), RD_SLOT_LEN(requestQueue));
-            resp_len = DAP_ExecuteCommand(RD_SLOT_PTR(requestQueue), WR_SLOT_PTR(responseQueue)) & 0xffff;
+            resp_len = dap_execute_command(RD_SLOT_PTR(requestQueue), WR_SLOT_PTR(responseQueue), "YAPicoprobe CMSIS-DAP v2") & 0xffff;
 
             xSemaphoreTake(edpt_spoon, portMAX_DELAY);
 
