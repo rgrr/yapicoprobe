@@ -571,6 +571,7 @@ int main(void)
                    "UNKNOWN\n");
 #endif
     picoprobe_info("PICO-SDK:   " PICO_SDK_VERSION_STRING "\n");
+    picoprobe_info("FreeRTOS:   " tskKERNEL_VERSION_NUMBER "\n");
     picoprobe_info("TinyUSB:    " TUSB_VERSION_STRING "\n");
     picoprobe_info("CMSIS-DAP:  " DAP_FW_VER "\n");
     picoprobe_info("++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++\n");
