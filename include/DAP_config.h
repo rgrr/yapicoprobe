@@ -166,7 +166,7 @@ __STATIC_INLINE uint8_t DAP_GetVendorString (char *str)
 */
 __STATIC_INLINE uint8_t DAP_GetProductString (char *str)
 {
-    strcpy(str, "YAPicoprobe");
+    strcpy(str, "YAPicoprobe CMSIS-DAP");
     return strlen(str) + 1;
 }
 
