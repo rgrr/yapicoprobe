@@ -276,22 +276,45 @@
     static uint8_t TxDataBuffer[_DAP_PACKET_SIZE_HID];
 #endif
 
-static uint32_t dap_execute_command(const uint8_t *request, uint8_t *response, const char *product_str)
+
+
+static uint32_t dap_execute_command(const uint8_t *request, uint8_t *response, const char *product_str,
+                                    uint8_t packet_count, uint16_t packet_size)
 /**
- * Execute a DAP command and, for DAP_Info(Product ID) requests, overwrite the
- * product string in the response.  This allows host tools to distinguish the
- * CMSIS-DAPv1 and CMSIS-DAPv2 interfaces of the probe.
+ * Execute a DAP command and, for DAP_Info requests, overwrite selected values
+ * in the response:
+ * - Product ID: use product_str.  This allows host tools to distinguish the
+ *   CMSIS-DAPv1 and CMSIS-DAPv2 interfaces of the probe.
+ * - Packet Count/Size: use packet_count/packet_size if packet_count != 0.
+ *   Required for the v1 (HID) interface, because the global dap_packet_count/
+ *   dap_packet_size reflect the v2 values (16/64) which the single-buffered
+ *   HID path cannot actually handle.
  */
 {
     uint32_t res = DAP_ExecuteCommand(request, response);
 
-    if (product_str != NULL  &&  request[0] == ID_DAP_Info  &&  request[1] == DAP_ID_PRODUCT) {
-        uint32_t len = (uint32_t)strlen(product_str) + 1;   // include trailing zero
+    if (request[0] == ID_DAP_Info) {
+        if (product_str != NULL  &&  request[1] == DAP_ID_PRODUCT) {
+            uint32_t len = (uint32_t)strlen(product_str) + 1;   // include trailing zero
 
-        response[0] = ID_DAP_Info;
-        response[1] = (uint8_t)len;
-        memcpy(response + 2, product_str, len);
-        res = (res & 0xffff0000) | (len + 2);
+            response[0] = ID_DAP_Info;
+            response[1] = (uint8_t)len;
+            memcpy(response + 2, product_str, len);
+            res = (res & 0xffff0000) | (len + 2);
+        }
+        else if (packet_count != 0  &&  request[1] == DAP_ID_PACKET_COUNT) {
+            response[0] = ID_DAP_Info;
+            response[1] = 1;
+            response[2] = packet_count;
+            res = (res & 0xffff0000) | 3;
+        }
+        else if (packet_count != 0  &&  request[1] == DAP_ID_PACKET_SIZE) {
+            response[0] = ID_DAP_Info;
+            response[1] = 2;
+            response[2] = (uint8_t)packet_size;
+            response[3] = (uint8_t)(packet_size >> 8);
+            res = (res & 0xffff0000) | 4;
+        }
     }
     return res;
 }
@@ -715,7 +738,8 @@ void tud_hid_set_report_cb(uint8_t itf, uint8_t report_id, hid_report_type_t rep
         }
         picoprobe_info_out("\n");
 #else
-        uint32_t res = dap_execute_command(RxDataBuffer, TxDataBuffer, "YAPicoprobe CMSIS-DAP v1");
+        uint32_t res = dap_execute_command(RxDataBuffer, TxDataBuffer, "YAPicoprobe CMSIS-DAP v1",
+                                           _DAP_PACKET_COUNT_HID, _DAP_PACKET_SIZE_HID);
         (void) res;
 #endif
         tud_hid_report(0, TxDataBuffer, _DAP_PACKET_SIZE_HID);
@@ -1054,7 +1078,7 @@ void dap_thread(void *ptr)
             // execute DAP request
             //
             HandleDapConnectDisconnect(RD_SLOT_PTR(requestQueue), RD_SLOT_LEN(requestQueue));
-            resp_len = dap_execute_command(RD_SLOT_PTR(requestQueue), WR_SLOT_PTR(responseQueue), "YAPicoprobe CMSIS-DAP v2") & 0xffff;
+            resp_len = dap_execute_command(RD_SLOT_PTR(requestQueue), WR_SLOT_PTR(responseQueue), "YAPicoprobe CMSIS-DAP v2", 0, 0) & 0xffff;
 
             xSemaphoreTake(edpt_spoon, portMAX_DELAY);
 
