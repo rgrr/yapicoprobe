@@ -798,7 +798,7 @@ static void rtt_state_machine(void)
             state_rtt_cb_detection = E_RTT_CB_TARGET_LOST;
         }
         else {
-            E_RTT_CB_SEARCH r = search_for_rtt_cb( &rtt_cb, timeout_rtt_io_endless_tt);
+            E_RTT_CB_SEARCH r = search_for_rtt_cb( &rtt_cb, timeout_rtt_io_while_dap_tt);
             if (r == E_RTT_CB_SEARCH_WRAP) {
                 if (rtt_cb_cnt == 0  &&  rtt_cb_prev != 0) {
                     rtt_cb_prev = 0;
