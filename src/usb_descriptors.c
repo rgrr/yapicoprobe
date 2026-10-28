@@ -31,6 +31,10 @@
 #include <pico/usb_reset.h>
 
 
+#if OPT_CMSIS_DAPV2
+    #define ENABLE_RESET_INTERFACE 1
+#endif
+
 //--------------------------------------------------------------------+
 // String enums
 //--------------------------------------------------------------------+
@@ -58,7 +62,9 @@ enum
 #if OPT_CDC_SYSVIEW
     STRID_INTERFACE_CDC_SYSVIEW,
 #endif
+#if ENABLE_RESET_INTERFACE
     STRID_RESET,
+#endif
 };
 
 
@@ -138,7 +144,9 @@ enum
     ITF_NUM_CDC_NCM_COM,
     ITF_NUM_CDC_NCM_DATA,
 #endif
+#if ENABLE_RESET_INTERFACE
     ITF_NUM_RESET,
+#endif
     ITF_NUM_TOTAL
 };
 
@@ -262,7 +270,7 @@ enum
 //
 #define CURR_MA 200
 
-static uint8_t desc_configuration[] =
+static const uint8_t desc_configuration[] =
 {
     // Config number, interface count, string index, total length, attribute, power in mA
     //TUD_CONFIG_DESCRIPTOR(1, ITF_NUM_TOTAL, 0, CONFIG_TOTAL_LEN, TUSB_DESC_CONFIG_ATT_REMOTE_WAKEUP, 500),
@@ -301,8 +309,10 @@ static uint8_t desc_configuration[] =
                 50, (uint8_t)((uint8_t)NCM_NETWORK_CAPS_ETH_FILTER | (uint8_t)NCM_NETWORK_CAPS_NTB_INPUT_SIZE)),
     #endif
 #endif
+#if ENABLE_RESET_INTERFACE
     // Reset interface
     TUD_RPI_RESET_DESCRIPTOR(ITF_NUM_RESET, STRID_RESET),
+#endif
 };
 
 
@@ -312,7 +322,6 @@ static uint8_t desc_configuration[] =
 uint8_t const * tud_descriptor_configuration_cb(uint8_t index)
 {
     (void)index; // for multiple configurations
-    desc_configuration[CONFIG_TOTAL_LEN - TUD_RPI_RESET_DESC_LEN - TUD_CDC_DESC_LEN + 8 + 9 + 5 + 5 + 4 - 1] = 0x6;
     return desc_configuration;
 }   // tud_descriptor_configuration_cb
 
@@ -351,7 +360,9 @@ static char const* string_desc_arr[] =
 #if OPT_NET
     [STRID_MAC]                    = "",
 #endif
+#if ENABLE_RESET_INTERFACE
     [STRID_RESET]                  = "Reset",
+#endif
 };
 
 static uint16_t _desc_str[32];
@@ -422,7 +433,11 @@ https://developers.google.com/web/fundamentals/native-hardware/build-for-webusb/
 (Section Microsoft OS compatibility descriptors)
 */
 #define MS_OS_FEATURE_DESC_LEN 0xA0
-#define MS_OS_20_DESC_LEN      (0x0A + 0x08 + MS_OS_FEATURE_DESC_LEN + RPI_RESET_MS_OS_20_DESC_LEN)
+#if ENABLE_RESET_INTERFACE
+    #define MS_OS_20_DESC_LEN      (0x0A + 0x08 + MS_OS_FEATURE_DESC_LEN + RPI_RESET_MS_OS_20_DESC_LEN)
+#else
+    #define MS_OS_20_DESC_LEN      (0x0A + 0x08 + MS_OS_FEATURE_DESC_LEN)
+#endif
 
 #define BOS_TOTAL_LEN      (TUD_BOS_DESC_LEN + TUD_BOS_MICROSOFT_OS_DESC_LEN)
 
@@ -460,7 +475,9 @@ uint8_t const desc_ms_os_20[] = {
     'A', 0x00, 'A', 0x00, '3', 0x00, '6', 0x00, '-', 0x00, '1', 0x00, 'A', 0x00, 'A', 0x00, 'E', 0x00, '4', 0x00,
     '6', 0x00, '4', 0x00, '6', 0x00, '3', 0x00, '7', 0x00, '7', 0x00, '6', 0x00, '}', 0x00, 0x00, 0x00, 0x00, 0x00,
 
+#if ENABLE_RESET_INTERFACE
     RPI_RESET_MS_OS_20_DESCRIPTOR(ITF_NUM_RESET)
+#endif
 };
 
 TU_VERIFY_STATIC(sizeof(desc_ms_os_20) == MS_OS_20_DESC_LEN, "Incorrect size");
