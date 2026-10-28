@@ -265,7 +265,7 @@ static E_RTT_CB_SEARCH search_for_rtt_cb(uint32_t *p_rtt_cb, const TickType_t ti
 
         *p_rtt_cb = addr + (sizeof(buf) - sizeof(EXT_SEGGER_RTT_CB_HEADER));
 
-        if (sw_unlock_requested()  &&  !xTimerIsTimerActive(timer_rtt_io)) {
+        if (sw_unlock_requested()  ||  !xTimerIsTimerActive(timer_rtt_io)) {
             break;
         }
     }
@@ -780,6 +780,7 @@ static void rtt_state_machine(void)
             rtt_print_target_info();
 
             rtt_cb = 0;
+            rtt_cb_prev = 1;           // on first run create message "no RTT_CB found" if there is nothing
 
             picoprobe_info("searching RTT_CB in 0x%08x..0x%08x, prev: 0x%08x\n",
                            (unsigned)TARGET_RAM_START, (unsigned)(TARGET_RAM_END - 1), (unsigned)rtt_cb);
