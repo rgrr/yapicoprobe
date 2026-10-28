@@ -120,9 +120,11 @@
  */
 
 // new implementation has been stolen from the original picoprobe
-#define NEW_DAP
+#if OPT_CMSIS_DAPV2_NEW
+    #define NEW_DAP                     1
+#endif
 
-#ifndef NEW_DAP
+#if !NEW_DAP
     #define _DAP_PACKET_COUNT_OPENOCD   1
     #define _DAP_PACKET_SIZE_OPENOCD    1024
     #define _DAP_PACKET_COUNT_PROBERS   2
@@ -162,7 +164,7 @@
     #endif
 #endif
 
-#ifndef NEW_DAP
+#if !NEW_DAP
     static TaskHandle_t           dap_taskhandle = NULL;
     static EventGroupHandle_t     dap_events;
     static StreamBufferHandle_t   dap_stream;
@@ -175,12 +177,12 @@
     uint16_t dap_packet_size  = _DAP_PACKET_SIZE_NEW;
 #endif
 
-#if defined(NEW_DAP)  &&  OPT_CMSIS_DAPV1
+#if NEW_DAP  &&  OPT_CMSIS_DAPV1
     #define _DAP_PACKET_COUNT_HID       1
     #define _DAP_PACKET_SIZE_HID        64
 #endif
 
-#ifndef NEW_DAP
+#if !NEW_DAP
     #define BUFFER_MAXSIZE_1 MAX(_DAP_PACKET_COUNT_OPENOCD*_DAP_PACKET_SIZE_OPENOCD, _DAP_PACKET_COUNT_PROBERS*_DAP_PACKET_SIZE_PROBERS)
     #define BUFFER_MAXSIZE_2 MAX(_DAP_PACKET_COUNT_PYOCD  *_DAP_PACKET_SIZE_PYOCD,   _DAP_PACKET_COUNT_UNKNOWN*_DAP_PACKET_SIZE_UNKNOWN)
     #define BUFFER_MAXSIZE   MAX(BUFFER_MAXSIZE_1, BUFFER_MAXSIZE_2)
@@ -208,7 +210,7 @@
 #endif
 
 
-#ifdef NEW_DAP
+#if NEW_DAP
     #define DAP_INTERFACE_SUBCLASS 0x00
     #define DAP_INTERFACE_PROTOCOL 0x00
 
@@ -283,7 +285,7 @@
 
 #endif
 
-#if defined(NEW_DAP)  &&  OPT_CMSIS_DAPV1
+#if NEW_DAP  &&  OPT_CMSIS_DAPV1
     static uint8_t TxDataBuffer[_DAP_PACKET_SIZE_HID];
 #endif
 
@@ -338,7 +340,7 @@ static uint32_t dap_execute_command(const uint8_t *request, uint8_t *response, c
 
 
 
-#if OPT_CMSIS_DAPV2  &&  !defined(NEW_DAP)
+#if OPT_CMSIS_DAPV2  &&  !NEW_DAP
 
 #if TUSB_VERSION_NUMBER <= 2000  // 0.20.0
 void tud_vendor_rx_cb(uint8_t itf, uint8_t const* buffer, uint16_t bufsize)
@@ -380,7 +382,7 @@ void tud_vendor_rx_cb(uint8_t itf, uint8_t const* buffer, uint32_t bufsize)
 
 
 
-#if OPT_CMSIS_DAPV2  &&  !defined(NEW_DAP)
+#if OPT_CMSIS_DAPV2  &&  !NEW_DAP
 void dap_task(void *ptr)
 /**
  * CMSIS-DAP task.
@@ -787,7 +789,7 @@ bool dap_is_connected(void)
 
 
 
-#ifdef NEW_DAP
+#if NEW_DAP
 
 static void HandleDapDisconnectTimeout(void)
 {
@@ -1207,7 +1209,7 @@ usbd_class_driver_t const *usbd_app_driver_get_cb(uint8_t *driver_count)
 
 
 
-#if OPT_CMSIS_DAPV2  &&  !defined(NEW_DAP)
+#if OPT_CMSIS_DAPV2  &&  !NEW_DAP
 static void dap_reset_tool_timeout(TimerHandle_t xTimer)
 {
     // probe-rs does not like this (because it does reconnects with other fingerprints)
@@ -1224,7 +1226,7 @@ void dap_server_init(uint32_t task_prio)
 {
     picoprobe_debug("dap_server_init(%u)\n", (unsigned)task_prio);
 
-#ifdef NEW_DAP
+#if NEW_DAP
     /* Lowest priority thread is debug - need to shuffle buffers before we can toggle swd... */
     xTaskCreate(dap_thread, "DAP", configMINIMAL_STACK_SIZE, NULL, task_prio, &dap_taskhandle);
 
@@ -1233,7 +1235,7 @@ void dap_server_init(uint32_t task_prio)
     #endif
 #endif
 
-#if OPT_CMSIS_DAPV2  &&  !defined(NEW_DAP)
+#if OPT_CMSIS_DAPV2  &&  !NEW_DAP
     dap_stream = xStreamBufferCreate(BUFFER_MAXSIZE, 1);
     if (dap_stream == NULL) {
         picoprobe_error("dap_server_init: cannot create dap_stream\n");

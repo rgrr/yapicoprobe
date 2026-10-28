@@ -31,7 +31,7 @@
 #include <pico/usb_reset.h>
 
 
-#if OPT_CMSIS_DAPV2
+#if OPT_CMSIS_DAPV2_NEW
     #define ENABLE_RESET_INTERFACE 1
 #endif
 
