@@ -322,7 +322,7 @@ static uint32_t dap_execute_command(const uint8_t *request, uint8_t *response, c
             response[2] = packet_count;
             res = (res & 0xffff0000) | 3;
         }
-        else if (packet_count != 0  &&  request[1] == DAP_ID_PACKET_SIZE) {
+        else if (packet_size != 0  &&  request[1] == DAP_ID_PACKET_SIZE) {
             response[0] = ID_DAP_Info;
             response[1] = 2;
             response[2] = (uint8_t)packet_size;
