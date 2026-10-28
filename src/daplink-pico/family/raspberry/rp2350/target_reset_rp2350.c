@@ -557,7 +557,7 @@ static uint8_t rp2350_target_set_state(target_state_t state)
 {
     uint8_t r = false;
 
-//    printf("---------------------------------------------- rp2350_target_set_state(%d)\n", state);
+//    printf("----- rp2350_target_set_state(%d)\n", state);
 
     switch (state) {
         case RESET_PROGRAM:
@@ -598,30 +598,32 @@ static uint8_t rp2350_target_set_state(target_state_t state)
 //----------------------------------------------------------------------------------------------------------------------
 
 
-#if 0
 static void rp2350_swd_set_target_reset(uint8_t asserted)
 /**
- * Hardware signal is not guaranteed to exist
+ * Reset RP2350 with its own procedure.  As a last resort use hardware reset via dedicated pins.
  */
 {
-    extern void probe_reset_pin_set(uint32_t);
-
-    // set HW signal accordingly, asserted means "active"
 //    printf("----- rp2350_swd_set_target_reset(%d)\n", asserted);
-    probe_reset_pin_set(asserted ? 0 : 1);
+
+    if (asserted) {
+        uint32_t aircr;
+
+        if (swd_read_word(NVIC_AIRCR, &aircr)) {
+            swd_write_word(NVIC_AIRCR, VECTKEY | (aircr & SCB_AIRCR_PRIGROUP_Msk) | soft_reset);
+        }
+    }
+
+    if (g_board_info.swd_set_target_reset){
+        g_board_info.swd_set_target_reset(asserted);
+    }
 }   // rp2350_swd_set_target_reset
-#endif
 
 
 target_family_descriptor_t g_raspberry_rp2350_family = {
     .family_id                = TARGET_RP2350_FAMILY_ID,
-#if 0
-    .swd_set_target_reset     = &rp2350_swd_set_target_reset,
-#else
     .default_reset_type       = kSoftwareReset,
     .soft_reset_type          = SYSRESETREQ,
-    .swd_set_target_reset     = NULL,
-#endif
+    .swd_set_target_reset     = &rp2350_swd_set_target_reset,
     .target_set_state         = &rp2350_target_set_state,
     .apsel                    = 0x2d00
 };
