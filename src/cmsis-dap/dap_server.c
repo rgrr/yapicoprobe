@@ -20,9 +20,17 @@
  * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  * THE SOFTWARE.
- *
  */
 
+/**
+ * \note
+ *    This mess has to be cleaned up.  Namely
+ *    - either remove code for NEW_DAP or !NEW_DAP.  Currently it is not clear for me
+ *      which version to keep.  Old version has slightly better performance, new version
+ *      has no compatibility issues
+ *    - if decision goes for NEW_DAP, then also this packet_count/size stuff has to be
+ *      reworked.  Completely confusing (as a lot of other code)
+ */
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -276,6 +284,12 @@
     static uint8_t TxDataBuffer[_DAP_PACKET_SIZE_HID];
 #endif
 
+#if TUSB_VERSION_NUMBER <= 2000
+    #define USBD_EDPT_XFER(RHPORT,EPADDR,DATA,LEN)  usbd_edpt_xfer(RHPORT, EPADDR, DATA, LEN)
+#else
+    #define USBD_EDPT_XFER(RHPORT,EPADDR,DATA,LEN)  usbd_edpt_xfer(RHPORT, EPADDR, DATA, LEN, false)
+#endif
+
 
 
 static uint32_t dap_execute_command(const uint8_t *request, uint8_t *response, const char *product_str,
@@ -317,7 +331,9 @@ static uint32_t dap_execute_command(const uint8_t *request, uint8_t *response, c
         }
     }
     return res;
-}
+}   // dap_execute_command
+
+
 
 #if OPT_CMSIS_DAPV2  &&  !defined(NEW_DAP)
 
@@ -442,6 +458,8 @@ void dap_task(void *ptr)
                 //
                 // try to find out which tool is connecting
                 //
+#if 0
+                // just for history reasons
                 uint32_t psize;
                 uint32_t pcnt;
 
@@ -459,6 +477,7 @@ void dap_task(void *ptr)
                     dap_tool = E_DAPTOOL_USER;
                 }
                 else
+#endif
                 {
                     dap_tool = DAP_FingerprintTool(RxDataBuffer, request_len);
                     if (dap_tool == E_DAPTOOL_OPENOCD) {
@@ -494,8 +513,7 @@ void dap_task(void *ptr)
                         picoprobe_info("=================================== DAPv2 connect target, host %s, buffer: %dx%dbytes\n",
                                 (dap_tool == E_DAPTOOL_OPENOCD) ? "OpenOCD"    :
                                     (dap_tool == E_DAPTOOL_PYOCD) ? "pyOCD"       :
-                                        (dap_tool == E_DAPTOOL_PROBERS) ? "probe-rs" :
-                                            (dap_tool == E_DAPTOOL_USER) ? "user-set"   : "UNKNOWN", dap_packet_count, dap_packet_size);
+                                        (dap_tool == E_DAPTOOL_PROBERS) ? "probe-rs" : "UNKNOWN", dap_packet_count, dap_packet_size);
                         picoprobe_debug("------------ %d (command leading to online)\n", RxDataBuffer[0]);
                         led_state(LS_DAPV2_CONNECTED);
                     }
@@ -738,6 +756,7 @@ void tud_hid_set_report_cb(uint8_t itf, uint8_t report_id, hid_report_type_t rep
         }
         picoprobe_info_out("\n");
 #else
+        memset(TxDataBuffer, 0, _DAP_PACKET_SIZE_HID);
         uint32_t res = dap_execute_command(RxDataBuffer, TxDataBuffer, "YAPicoprobe CMSIS-DAP v1",
                                            _DAP_PACKET_COUNT_HID, _DAP_PACKET_SIZE_HID);
         (void) res;
@@ -828,7 +847,10 @@ bool dap_edpt_deinit(void)
 #if DAP_DEBUG
     picoprobe_info("dap_edpt_deinit\n");
 #endif
-    vSemaphoreDelete(edpt_spoon);
+    if (edpt_spoon != NULL) {
+        vSemaphoreDelete(edpt_spoon);
+        edpt_spoon = NULL;
+    }
     return true;
 }   // dap_edpt_deinit
 
@@ -839,6 +861,8 @@ void dap_edpt_reset(uint8_t __unused rhport)
 #if DAP_DEBUG
     picoprobe_info("dap_edpt_reset %d\n", rhport);
 #endif
+    memset( &requestQueue,  0, sizeof(requestQueue));
+    memset( &responseQueue, 0, sizeof(responseQueue));
     itf_num = 0;
 }   // dap_edpt_reset
 
@@ -854,9 +878,6 @@ uint16_t dap_edpt_open(uint8_t __unused _rhport, tusb_desc_interface_t const *it
     picoprobe_info("dap_edpt_open\n");
 #endif
 
-    memset( &requestQueue,  0, sizeof(requestQueue));
-    memset( &responseQueue, 0, sizeof(responseQueue));
-
     uint16_t const drv_len = sizeof(tusb_desc_interface_t) + (itf_desc->bNumEndpoints * sizeof(tusb_desc_endpoint_t));
     TU_VERIFY(max_len >= drv_len, 0);
     itf_num = itf_desc->bInterfaceNumber;
@@ -871,12 +892,7 @@ uint16_t dap_edpt_open(uint8_t __unused _rhport, tusb_desc_interface_t const *it
 
     // The OUT endpoint requires a call to usbd_edpt_xfer to initialize the endpoint, giving TinyUSB a buffer to consume when a transfer occurs at the endpoint
     usbd_edpt_open(rhport, edpt_desc);
-
-#if TUSB_VERSION_NUMBER <= 2000
-    usbd_edpt_xfer(rhport, out_ep_addr, WR_SLOT_PTR(requestQueue), _DAP_PACKET_SIZE_NEW);
-#else
-    usbd_edpt_xfer(rhport, out_ep_addr, WR_SLOT_PTR(requestQueue), _DAP_PACKET_SIZE_NEW, true);
-#endif
+    USBD_EDPT_XFER(rhport, out_ep_addr, WR_SLOT_PTR(requestQueue), _DAP_PACKET_SIZE_NEW);
 
     //
     // Initialize the IN endpoint (device -> host)
@@ -937,11 +953,7 @@ bool dap_edpt_xfer_cb(uint8_t __unused rhport, uint8_t ep_addr, xfer_result_t re
             // start transmission of next pending response
             if (RD_SLOT_LEN(responseQueue) != 0)
             {
-#if TUSB_VERSION_NUMBER <= 2000
-                usbd_edpt_xfer(rhport, ep_addr, RD_SLOT_PTR(responseQueue), RD_SLOT_LEN(responseQueue));
-#else
-                usbd_edpt_xfer(rhport, ep_addr, RD_SLOT_PTR(responseQueue), RD_SLOT_LEN(responseQueue), true);
-#endif
+                USBD_EDPT_XFER(rhport, ep_addr, RD_SLOT_PTR(responseQueue), RD_SLOT_LEN(responseQueue));
             }
             else
             {
@@ -974,11 +986,7 @@ bool dap_edpt_xfer_cb(uint8_t __unused rhport, uint8_t ep_addr, xfer_result_t re
             if (WR_NEXT_SLOT_LEN(requestQueue) == 0)
             {
                 requestQueue.wr_idx = MOD_PACKET_COUNT(requestQueue.wr_idx + 1);
-#if TUSB_VERSION_NUMBER <= 2000
-                usbd_edpt_xfer(rhport, ep_addr, WR_SLOT_PTR(requestQueue), _DAP_PACKET_SIZE_NEW);
-#else
-                usbd_edpt_xfer(rhport, ep_addr, WR_SLOT_PTR(requestQueue), _DAP_PACKET_SIZE_NEW, true);
-#endif
+                USBD_EDPT_XFER(rhport, ep_addr, WR_SLOT_PTR(requestQueue), _DAP_PACKET_SIZE_NEW);
                 requestQueue.rcvStartDelayed = false;
             }
             else
@@ -1065,7 +1073,7 @@ void dap_thread(void *ptr)
                                 (int)RD_SLOT_LEN(requestQueue),
                                 (int)DAP_GetCommandLength(RD_SLOT_PTR(requestQueue), RD_SLOT_LEN(requestQueue)));
             }
-#if 0  &&  DAP_DEBUG
+#if 0   &&  DAP_DEBUG
             // better use DAPdeb.c
             picoprobe_info("%u %u DAP cmd %s len %d %d\n",
                            (unsigned)requestQueue.wr_idx, (unsigned)requestQueue.rd_idx,
@@ -1093,11 +1101,7 @@ void dap_thread(void *ptr)
                 printf("........ %d %d\n", (int)requestQueue.rd_idx, (int)requestQueue.wr_idx);
 #endif
                 requestQueue.wr_idx = MOD_PACKET_COUNT(requestQueue.wr_idx + 1);
-#if TUSB_VERSION_NUMBER <= 2000
-                usbd_edpt_xfer(rhport, out_ep_addr, WR_SLOT_PTR(requestQueue), _DAP_PACKET_SIZE_NEW);
-#else
-                usbd_edpt_xfer(rhport, out_ep_addr, WR_SLOT_PTR(requestQueue), _DAP_PACKET_SIZE_NEW, true);
-#endif
+                USBD_EDPT_XFER(rhport, out_ep_addr, WR_SLOT_PTR(requestQueue), _DAP_PACKET_SIZE_NEW);
                 requestQueue.rcvStartDelayed = false;
             }
             xSemaphoreGive(edpt_spoon);
@@ -1123,12 +1127,7 @@ void dap_thread(void *ptr)
                 if ( !responseQueue.xmtRunning)
                 {
                     responseQueue.xmtRunning = true;
-
-#if TUSB_VERSION_NUMBER <= 2000
-                    usbd_edpt_xfer(rhport, in_ep_addr, RD_SLOT_PTR(responseQueue), RD_SLOT_LEN(responseQueue));
-#else
-                    usbd_edpt_xfer(rhport, in_ep_addr, RD_SLOT_PTR(responseQueue), RD_SLOT_LEN(responseQueue), true);
-#endif
+                    USBD_EDPT_XFER(rhport, in_ep_addr, RD_SLOT_PTR(responseQueue), RD_SLOT_LEN(responseQueue));
                 }
 
                 xSemaphoreGive(edpt_spoon);
