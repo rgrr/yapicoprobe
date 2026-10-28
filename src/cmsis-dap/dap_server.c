@@ -242,8 +242,10 @@
     static TaskHandle_t      dap_taskhandle = NULL;
     static SemaphoreHandle_t edpt_spoon;
 
-    static bool swd_connected;
+    static bool      swd_connected;
     static daptool_t dap_tool = E_DAPTOOL_UNKNOWN;
+    static bool      dap_tool_reconnect_pending;
+    static uint64_t  dap_tool_disconnect_us;
 
 #if DAP_DEBUG
     static const char * dap_cmd_string[] = {
@@ -786,24 +788,49 @@ bool dap_is_connected(void)
 
 #ifdef NEW_DAP
 
+static void HandleDapDisconnectTimeout(void)
+{
+    if (dap_tool_reconnect_pending  &&  time_us_64() - dap_tool_disconnect_us >= 50000) {
+        picoprobe_info("=================================== DAPv2 disconnect target\n");
+        dap_tool = DAP_FingerprintTool(NULL, 0);
+        dap_tool_reconnect_pending = false;
+    }
+}   // HandleDapDisconnectTimeout
+
+
+
 static void HandleDapConnectDisconnect(const uint8_t *cmd, uint32_t cmdlen)
 /**
  * Handle DAP connect & disconnect.
  * - get and release sw_lock accordingly
  * - set LED state
+ * - tool detection
+ *   - retain the detected tool across disconnects shorter than 50 ms
+ *   - suppress disconnect/connect logs for these short gaps
+ *   - see HandleDapDisconnectTimeout()
  */
 {
-    dap_tool = DAP_FingerprintTool(cmd, cmdlen);
+    HandleDapDisconnectTimeout();
+
+    // A quick reconnect may omit the fingerprint or use a different query sequence.
+    if ( !dap_tool_reconnect_pending  &&  *cmd != ID_DAP_Disconnect) {
+        dap_tool = DAP_FingerprintTool(cmd, cmdlen);
+    }
 
     if ( !swd_connected) {
         if ( !DAP_OfflineCommand(cmd)) {
             if (sw_lock(E_SWLOCK_DAPV2)) {
                 swd_connected = true;
-                picoprobe_info("=================================== DAPv2 connect target, host %s, buffer: %dx%dbytes\n",
+                if ( !dap_tool_reconnect_pending) {
+                    picoprobe_info("=================================== DAPv2 connect target, host %s, buffer: %dx%dbytes\n",
                         (dap_tool == E_DAPTOOL_OPENOCD) ? "OpenOCD"  :
                         (dap_tool == E_DAPTOOL_PYOCD)   ? "pyOCD"    :
                         (dap_tool == E_DAPTOOL_PROBERS) ? "probe-rs" : "UNKNOWN", dap_packet_count, dap_packet_size);
-//                picoprobe_debug("------------ %d (command leading to online)\n", RxDataBuffer[0]);
+                }
+                dap_tool_reconnect_pending = false;
+#if DAP_DEBUG
+                picoprobe_debug("------------ %d (command leading to online)\n", RxDataBuffer[0]);
+#endif
                 led_state(LS_DAPV2_CONNECTED);
             }
 
@@ -822,7 +849,8 @@ static void HandleDapConnectDisconnect(const uint8_t *cmd, uint32_t cmdlen)
         // connected:
         if (*cmd == ID_DAP_Disconnect) {
             swd_connected = false;
-            picoprobe_info("=================================== DAPv2 disconnect target\n");
+            dap_tool_disconnect_us = time_us_64();
+            dap_tool_reconnect_pending = true;
             led_state(LS_DAPV2_DISCONNECTED);
             sw_unlock(E_SWLOCK_DAPV2);
         }
@@ -1032,6 +1060,8 @@ void dap_thread(void *ptr)
     {
         // Wait for wakeup from dap_edpt_xfer_cb
         r_wait = xTaskNotifyWait(0, 0xFFFFFFFFu, &cmd, pdMS_TO_TICKS(8));
+
+        HandleDapDisconnectTimeout();
 
 #if OPT_CMSIS_DAPV1
         // packet parameters must be restored in this case
