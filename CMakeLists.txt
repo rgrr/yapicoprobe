@@ -29,11 +29,12 @@ endif()
 # configuration for the probe RP2040 *WITHOUT NET*
 #
 option(OPT_CMSIS_DAPV1         "Enable CMSIS-DAPv1"                     1)
-option(OPT_CMSIS_DAPV2         "Enable CMSIS-DAPv2"                     1)
+option(OPT_CMSIS_DAPV2         "Enable CMSIS-DAPv2"                     0)
+option(OPT_CMSIS_DAPV2_NEW     "Enable new CMSIS-DAPv2"                 1)
 option(OPT_TARGET_UART         "Enable CDC for target UART I/O"         1)
 set(OPT_PROBE_DEBUG_OUT        "${DEFAULT_OPT_PROBE_DEBUG_OUT}" CACHE STRING "Destination for probe debug output: CDC/RTT/UART, disable with empty string")
 option(OPT_SIGROK              "Enable sigrok"                          0)
-option(OPT_MSC                 "Enable Mass Storage Device"             1)
+option(OPT_MSC                 "Enable Mass Storage Device"             0)
 option(OPT_MSC_RAM_UF2         "Enable file 'RAM.UF2' on Mass Storage"  1)
 set(OPT_NET                    "NCM" CACHE STRING "Enable lwIP on the Pico via NCM/ECM/RNDIS, disable NET with empty string")
 option(OPT_NET_ECHO_SERVER     "Enable echo server for testing"         1)
@@ -299,6 +300,9 @@ endif()
 if(OPT_CMSIS_DAPV2)
     add_compile_definitions(OPT_CMSIS_DAPV2=1)
 endif()
+if(OPT_CMSIS_DAPV2_NEW)
+    add_compile_definitions(OPT_CMSIS_DAPV2_NEW=1  OPT_CMSIS_DAPV2=1)
+endif()
 if(OPT_CDC_SYSVIEW)
     add_compile_definitions(OPT_CDC_SYSVIEW=1)
     target_sources(${PROJECT} PRIVATE
@@ -460,12 +464,14 @@ target_compile_definitions (${PROJECT} PRIVATE
 	PICO_RP2040_USB_DEVICE_ENUMERATION_FIX=1
 	PICO_RP2040_USB_DEVICE_UFRAME_FIX=1
 	PICO_XOSC_STARTUP_DELAY_MULTIPLIER=64  # Fix for rp2040-zero board, 64 is maximum value found in board definitions in SDK
+	PICO_ENABLE_USB_RESET_VIA_VENDOR_INTERFACE=1
 )
 
 target_link_libraries(${PROJECT} PRIVATE
         pico_multicore
         pico_stdlib
         pico_unique_id
+        pico_usb_reset
         tinyusb_device
         tinyusb_board
         hardware_pio

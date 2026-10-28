@@ -28,7 +28,12 @@
 #include <get_config.h>
 #include "tusb.h"
 #include "picoprobe_config.h"
+#include <pico/usb_reset.h>
 
+
+#if OPT_CMSIS_DAPV2_NEW
+    #define ENABLE_RESET_INTERFACE 1
+#endif
 
 //--------------------------------------------------------------------+
 // String enums
@@ -56,6 +61,9 @@ enum
 #endif
 #if OPT_CDC_SYSVIEW
     STRID_INTERFACE_CDC_SYSVIEW,
+#endif
+#if ENABLE_RESET_INTERFACE
+    STRID_RESET,
 #endif
 };
 
@@ -135,6 +143,9 @@ enum
 #elif OPT_NET_PROTO_NCM
     ITF_NUM_CDC_NCM_COM,
     ITF_NUM_CDC_NCM_DATA,
+#endif
+#if ENABLE_RESET_INTERFACE
+    ITF_NUM_RESET,
 #endif
     ITF_NUM_TOTAL
 };
@@ -229,12 +240,14 @@ enum
     #define CONFIG_TOTAL_LEN   (TUD_CONFIG_DESC_LEN + CFG_TUD_CDC*TUD_CDC_DESC_LEN + CFG_TUD_VENDOR*TUD_VENDOR_DESC_LEN \
                                 + CFG_TUD_HID*TUD_HID_INOUT_DESC_LEN + CFG_TUD_MSC*TUD_MSC_DESC_LEN                     \
                                 + CFG_TUD_ECM_RNDIS*TUD_RNDIS_DESC_LEN                                                  \
-                                + CFG_TUD_NCM*TUD_CDC_NCM_DESC_LEN)
+                                + CFG_TUD_NCM*TUD_CDC_NCM_DESC_LEN                                                      \
+                                + TUD_RPI_RESET_DESC_LEN)
 #else
     #define CONFIG_TOTAL_LEN   (TUD_CONFIG_DESC_LEN + CFG_TUD_CDC*TUD_CDC_DESC_LEN + CFG_TUD_VENDOR*TUD_VENDOR_DESC_LEN \
                                 + CFG_TUD_HID*TUD_HID_INOUT_DESC_LEN + CFG_TUD_MSC*TUD_MSC_DESC_LEN                     \
                                 + CFG_TUD_ECM_RNDIS*TUD_CDC_ECM_DESC_LEN                                                \
-                                + CFG_TUD_NCM*TUD_CDC_NCM_DESC_LEN)
+                                + CFG_TUD_NCM*TUD_CDC_NCM_DESC_LEN                                                      \
+                                + TUD_RPI_RESET_DESC_LEN)
 #endif
 
 #if OPT_CMSIS_DAPV1
@@ -257,7 +270,7 @@ enum
 //
 #define CURR_MA 200
 
-static uint8_t const desc_configuration[] =
+static const uint8_t desc_configuration[] =
 {
     // Config number, interface count, string index, total length, attribute, power in mA
     //TUD_CONFIG_DESCRIPTOR(1, ITF_NUM_TOTAL, 0, CONFIG_TOTAL_LEN, TUSB_DESC_CONFIG_ATT_REMOTE_WAKEUP, 500),
@@ -295,6 +308,10 @@ static uint8_t const desc_configuration[] =
                 64, CFG_TUD_NET_MTU,
                 50, (uint8_t)((uint8_t)NCM_NETWORK_CAPS_ETH_FILTER | (uint8_t)NCM_NETWORK_CAPS_NTB_INPUT_SIZE)),
     #endif
+#endif
+#if ENABLE_RESET_INTERFACE
+    // Reset interface
+    TUD_RPI_RESET_DESCRIPTOR(ITF_NUM_RESET, STRID_RESET),
 #endif
 };
 
@@ -342,6 +359,9 @@ static char const* string_desc_arr[] =
 #endif
 #if OPT_NET
     [STRID_MAC]                    = "",
+#endif
+#if ENABLE_RESET_INTERFACE
+    [STRID_RESET]                  = "Reset",
 #endif
 };
 
@@ -412,7 +432,12 @@ will insert "DeviceInterfaceGUIDs" multistring property.
 https://developers.google.com/web/fundamentals/native-hardware/build-for-webusb/
 (Section Microsoft OS compatibility descriptors)
 */
-#define MS_OS_20_DESC_LEN  0xB2
+#define MS_OS_FEATURE_DESC_LEN 0xA0
+#if ENABLE_RESET_INTERFACE
+    #define MS_OS_20_DESC_LEN      (0x0A + 0x08 + MS_OS_FEATURE_DESC_LEN + RPI_RESET_MS_OS_20_DESC_LEN)
+#else
+    #define MS_OS_20_DESC_LEN      (0x0A + 0x08 + MS_OS_FEATURE_DESC_LEN)
+#endif
 
 #define BOS_TOTAL_LEN      (TUD_BOS_DESC_LEN + TUD_BOS_MICROSOFT_OS_DESC_LEN)
 
@@ -439,7 +464,7 @@ uint8_t const desc_ms_os_20[] = {
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // sub-compatible
 
     // MS OS 2.0 Registry property descriptor: length, type
-    U16_TO_U8S_LE(MS_OS_20_DESC_LEN - 0x0A - 0x08 - 0x08 - 0x14), U16_TO_U8S_LE(MS_OS_20_FEATURE_REG_PROPERTY),
+    U16_TO_U8S_LE(MS_OS_FEATURE_DESC_LEN-0x08-0x14), U16_TO_U8S_LE(MS_OS_20_FEATURE_REG_PROPERTY),
     U16_TO_U8S_LE(0x0007), U16_TO_U8S_LE(0x002A), // wPropertyDataType, wPropertyNameLength and PropertyName "DeviceInterfaceGUIDs\0" in UTF-16
     'D', 0x00, 'e', 0x00, 'v', 0x00, 'i', 0x00, 'c', 0x00, 'e', 0x00, 'I', 0x00, 'n', 0x00, 't', 0x00, 'e', 0x00,
     'r', 0x00, 'f', 0x00, 'a', 0x00, 'c', 0x00, 'e', 0x00, 'G', 0x00, 'U', 0x00, 'I', 0x00, 'D', 0x00, 's', 0x00, 0x00, 0x00,
@@ -448,7 +473,11 @@ uint8_t const desc_ms_os_20[] = {
     '{', 0x00, 'C', 0x00, 'D', 0x00, 'B', 0x00, '3', 0x00, 'B', 0x00, '5', 0x00, 'A', 0x00, 'D', 0x00, '-', 0x00,
     '2', 0x00, '9', 0x00, '3', 0x00, 'B', 0x00, '-', 0x00, '4', 0x00, '6', 0x00, '6', 0x00, '3', 0x00, '-', 0x00,
     'A', 0x00, 'A', 0x00, '3', 0x00, '6', 0x00, '-', 0x00, '1', 0x00, 'A', 0x00, 'A', 0x00, 'E', 0x00, '4', 0x00,
-    '6', 0x00, '4', 0x00, '6', 0x00, '3', 0x00, '7', 0x00, '7', 0x00, '6', 0x00, '}', 0x00, 0x00, 0x00, 0x00, 0x00
+    '6', 0x00, '4', 0x00, '6', 0x00, '3', 0x00, '7', 0x00, '7', 0x00, '6', 0x00, '}', 0x00, 0x00, 0x00, 0x00, 0x00,
+
+#if ENABLE_RESET_INTERFACE
+    RPI_RESET_MS_OS_20_DESCRIPTOR(ITF_NUM_RESET)
+#endif
 };
 
 TU_VERIFY_STATIC(sizeof(desc_ms_os_20) == MS_OS_20_DESC_LEN, "Incorrect size");
